@@ -1,0 +1,50 @@
+# Hook archetypes.
+#
+# `weight` is the base sampling probability. A recency penalty is applied on top
+# at runtime (see pipeline/hook.py) so consecutive runs on the same style do not
+# converge on one archetype.
+#
+# Edit this file to retarget the system -- no code change required.
+
+archetypes:
+  - id: question
+    weight: 1.0
+    pattern: "시청자가 답을 모르는 상태로 두는 직접 질문. 정답을 주지 않는다."
+    fewshot:
+      - "이거 아직도 이렇게 하세요?"
+      - "왜 아무도 이 얘긴 안 할까요?"
+
+  - id: reversal
+    weight: 1.2
+    pattern: "결론이나 결과를 먼저 보여주고 과정을 궁금하게 만든다. 시간 순서를 뒤집는다."
+    fewshot:
+      - "결론부터 말하면, 완전히 반대였습니다."
+      - "이게 3개월 뒤 모습입니다."
+
+  - id: shock_number
+    weight: 0.9
+    pattern: "구체적인 수치 하나로 규모의 위화감을 만든다. 반올림하지 않은 숫자가 강하다."
+    fewshot:
+      - "여기에 쓴 돈 470만원."
+      - "실패율 87%인 걸 알고도 했습니다."
+
+  - id: empathy
+    weight: 1.0
+    pattern: "시청자가 이미 겪은 사소한 순간을 정확히 짚어 '내 얘기다'라고 느끼게 한다."
+    fewshot:
+      - "저만 이거 어려운 거 아니죠?"
+      - "이 화면 앞에서 한 번쯤 멈칫하셨을 겁니다."
+
+  - id: visual_impact
+    weight: 0.8
+    pattern: "자막을 최소화하고 첫 프레임의 시각적 충격만으로 붙잡는다. 텍스트는 3단어 이내."
+    fewshot:
+      - "말 없이 보여드립니다."
+      - "3초만."
+
+  - id: contradiction
+    weight: 1.0
+    pattern: "널리 믿는 통념을 한 문장으로 부정한다. 근거는 본편에서 준다."
+    fewshot:
+      - "이건 사실 하면 할수록 손해입니다."
+      - "다들 반대로 알고 계십니다."

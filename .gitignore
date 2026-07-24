@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+# Ignore run artifacts but keep the directory layout. Git cannot re-include a
+# file whose parent directory is excluded, hence the `dir/*` form.
+data/runs/*
+data/styles/*
+data/uploads/*
+!data/runs/.gitkeep
+!data/styles/.gitkeep
+!data/uploads/.gitkeep
