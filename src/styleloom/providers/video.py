@@ -14,11 +14,13 @@ motion. See docs/TOOL_RATIONALE.md.
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
-import time
+import warnings
 from pathlib import Path
 
 import httpx
+import yaml
 
 from ..config import settings
 
@@ -30,10 +32,29 @@ class VideoProviderError(RuntimeError):
 class BaseVideoProvider:
     name = "base"
 
+    @property
+    def min_clip_sec(self) -> float:
+        """Shortest clip this provider can produce. Real i2v endpoints have a
+        floor (3-4s) far above a typical short-form shot, so callers request the
+        floor and trim down."""
+        return 0.0
+
+    @property
+    def max_concurrency(self) -> int:
+        """Upper bound on parallel renders this provider tolerates."""
+        return 32
+
     def keyframe(self, prompt: str, out_path: Path, ref_image: Path | None = None) -> Path:
         raise NotImplementedError
 
-    def animate(self, image_path: Path, motion_prompt: str, duration: float, out_path: Path) -> Path:
+    def animate(
+        self,
+        image_path: Path,
+        motion_prompt: str,
+        duration: float,
+        out_path: Path,
+        persona_ref: Path | None = None,
+    ) -> Path:
         raise NotImplementedError
 
 
@@ -65,7 +86,14 @@ class MockVideoProvider(BaseVideoProvider):
         )
         return out_path
 
-    def animate(self, image_path: Path, motion_prompt: str, duration: float, out_path: Path) -> Path:
+    def animate(
+        self,
+        image_path: Path,
+        motion_prompt: str,
+        duration: float,
+        out_path: Path,
+        persona_ref: Path | None = None,
+    ) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fps, w, h = settings.fps, settings.width, settings.height
         frames = max(int(duration * fps), 1)
@@ -87,46 +115,84 @@ class MockVideoProvider(BaseVideoProvider):
 # --------------------------------------------------------------------------- #
 
 
-class FalVideoProvider(BaseVideoProvider):
-    """fal.ai hosts Seedance / Kling / Veo behind a uniform queue API.
+def load_fal_specs() -> dict:
+    path = settings.fal_models_path
+    if not path.exists():
+        path = Path(__file__).resolve().parents[3] / "configs" / "fal_models.yaml"
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
-    NOTE: model IDs change between releases -- they are configuration, not code.
-    Verify the current ID on fal.ai before running in production.
+
+class FalVideoProvider(BaseVideoProvider):
+    """fal.ai, driven by the endpoint specs in configs/fal_models.yaml.
+
+    Uses the official `fal_client` SDK rather than hand-rolled HTTP: it owns the
+    queue protocol and, more importantly, CDN upload. fal's own docs discourage
+    base64 data URIs above a few KB, and keyframes are far larger than that.
+
+    Endpoint schemas genuinely differ (`image_url` vs `start_image_url`,
+    different size parameters, different duration floors), so payloads are built
+    from the spec instead of a single fixed shape.
     """
 
     name = "fal"
-    QUEUE = "https://queue.fal.run"
 
     def __init__(self) -> None:
+        try:
+            import fal_client
+        except ImportError as exc:  # optional dependency
+            raise VideoProviderError(
+                "video_provider=fal requires `pip install fal-client`"
+            ) from exc
         if not settings.fal_key:
             raise VideoProviderError("STYLELOOM_FAL_KEY is required for video_provider=fal")
-        if not (settings.fal_t2i_model and settings.fal_i2v_model):
+        os.environ["FAL_KEY"] = settings.fal_key  # not setdefault: a stale env var must not win
+
+        specs = load_fal_specs()
+        self._client = fal_client
+        self.t2i_id = settings.fal_t2i_model
+        self.i2v_id = settings.fal_i2v_model
+        self.t2i = self._spec(specs, "text_to_image", self.t2i_id)
+        self.i2v = self._spec(specs, "image_to_video", self.i2v_id)
+
+    @staticmethod
+    def _spec(specs: dict, kind: str, model_id: str) -> dict:
+        known = specs.get(kind, {})
+        if model_id not in known:
             raise VideoProviderError(
-                "set STYLELOOM_FAL_T2I_MODEL and STYLELOOM_FAL_I2V_MODEL"
+                f"unknown {kind} endpoint {model_id!r}. "
+                f"Known: {sorted(known)}. Add it to configs/fal_models.yaml."
             )
-        self.headers = {"Authorization": f"Key {settings.fal_key}"}
+        return known[model_id]
 
-    def _submit_and_wait(self, model: str, payload: dict, timeout: float = 600.0) -> dict:
-        with httpx.Client(timeout=60.0) as client:
-            r = client.post(f"{self.QUEUE}/{model}", headers=self.headers, json=payload)
-            if r.status_code >= 400:
-                raise VideoProviderError(f"fal submit {r.status_code}: {r.text[:300]}")
-            job = r.json()
-            status_url = job.get("status_url")
-            response_url = job.get("response_url")
-            if not status_url or not response_url:
-                raise VideoProviderError(f"fal returned no queue URLs: {job}")
+    @property
+    def min_clip_sec(self) -> float:
+        """Shortest clip the configured endpoint will produce. Shots below this
+        are requested at the floor and trimmed by the caller."""
+        return float(self.i2v.get("min_duration", 0))
 
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                s = client.get(status_url, headers=self.headers).json()
-                status = s.get("status")
-                if status == "COMPLETED":
-                    return client.get(response_url, headers=self.headers).json()
-                if status in {"FAILED", "CANCELLED"}:
-                    raise VideoProviderError(f"fal job {status}: {s}")
-                time.sleep(3.0)
-        raise VideoProviderError(f"fal job timed out after {timeout}s")
+    @property
+    def max_concurrency(self) -> int:
+        """fal enforces a per-user concurrency limit per endpoint -- Kling v3
+        defaults to 1. Exceeding it fails the run, so the ceiling comes from the
+        endpoint, not from our settings."""
+        return int(self.i2v.get("max_concurrency", 0)) or super().max_concurrency
+
+    def _run(self, model_id: str, payload: dict) -> dict:
+        try:
+            return self._client.subscribe(
+                model_id, arguments=payload, client_timeout=settings.fal_timeout_sec
+            )
+        except Exception as exc:
+            raise VideoProviderError(f"fal {model_id} failed: {exc}") from exc
+
+    @staticmethod
+    def _media_url(result: dict, key: str) -> str:
+        node = result.get(key)
+        if isinstance(node, list):
+            node = node[0] if node else None
+        if isinstance(node, dict) and node.get("url"):
+            return node["url"]
+        raise VideoProviderError(f"no {key} URL in fal result: {str(result)[:300]}")
 
     @staticmethod
     def _download(url: str, out_path: Path) -> Path:
@@ -138,36 +204,49 @@ class FalVideoProvider(BaseVideoProvider):
                     fh.write(chunk)
         return out_path
 
-    @staticmethod
-    def _first_url(result: dict, *keys: str) -> str:
-        for key in keys:
-            node = result.get(key)
-            if isinstance(node, dict) and node.get("url"):
-                return node["url"]
-            if isinstance(node, list) and node and isinstance(node[0], dict) and node[0].get("url"):
-                return node[0]["url"]
-        raise VideoProviderError(f"no media URL in fal result: {str(result)[:300]}")
-
     def keyframe(self, prompt: str, out_path: Path, ref_image: Path | None = None) -> Path:
-        payload = {
-            "prompt": prompt,
-            "image_size": {"width": settings.width, "height": settings.height},
-        }
-        result = self._submit_and_wait(settings.fal_t2i_model, payload)
-        return self._download(self._first_url(result, "images", "image"), out_path)
+        payload: dict = {"prompt": prompt, **self.t2i.get("defaults", {})}
+        if self.t2i.get("size_mode") == "image_size_object":
+            payload["image_size"] = {"width": settings.width, "height": settings.height}
+        result = self._run(self.t2i_id, payload)
+        return self._download(self._media_url(result, self.t2i["output_key"]), out_path)
 
-    def animate(self, image_path: Path, motion_prompt: str, duration: float, out_path: Path) -> Path:
-        # fal image inputs accept data URIs; avoids needing a separate upload step.
-        import base64
+    def animate(
+        self,
+        image_path: Path,
+        motion_prompt: str,
+        duration: float,
+        out_path: Path,
+        persona_ref: Path | None = None,
+    ) -> Path:
+        spec = self.i2v
+        seconds = int(round(max(duration, spec.get("min_duration", 1))))
+        seconds = min(seconds, int(spec.get("max_duration", seconds)))
 
-        b64 = base64.b64encode(image_path.read_bytes()).decode()
-        payload = {
-            "prompt": motion_prompt,
-            "image_url": f"data:image/jpeg;base64,{b64}",
-            "duration": str(int(round(duration))),
-        }
-        result = self._submit_and_wait(settings.fal_i2v_model, payload)
-        return self._download(self._first_url(result, "video", "videos"), out_path)
+        payload: dict = {"prompt": motion_prompt, **spec.get("defaults", {})}
+        payload[spec["image_param"]] = self._client.upload_file(image_path)
+        payload[spec["duration_param"]] = str(seconds)  # string everywhere on fal
+
+        if spec.get("size_mode") == "resolution_enum":
+            payload["resolution"] = spec.get("resolution", "720p")
+        if spec.get("aspect_param"):
+            payload[spec["aspect_param"]] = "9:16" if settings.height > settings.width else "16:9"
+
+        if persona_ref is not None:
+            if spec.get("persona_mode") == "kling_elements":
+                payload["elements"] = [
+                    {"frontal_image_url": self._client.upload_file(persona_ref)}
+                ]
+                payload["prompt"] = f"@Element1 {motion_prompt}"
+            else:
+                warnings.warn(
+                    f"{self.i2v_id} has no reference-image parameter; persona ignored. "
+                    "Use a Kling v3 endpoint for creator consistency.",
+                    stacklevel=2,
+                )
+
+        result = self._run(self.i2v_id, payload)
+        return self._download(self._media_url(result, spec["output_key"]), out_path)
 
 
 def get_video_provider() -> BaseVideoProvider:

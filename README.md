@@ -133,7 +133,9 @@ Nothing about a specific reference video is in the code. To retarget:
 1. `POST /styles/extract` with your videos → a new `style.json`.
 2. Optionally edit `configs/archetypes.yaml`, or point
    `STYLELOOM_ARCHETYPES_PATH` at your own file. No code change.
-3. Point `STYLELOOM_VIDEO_PROVIDER=fal` at whichever models you use.
+3. Point `STYLELOOM_VIDEO_PROVIDER=fal` at whichever models you use. Adding an
+   endpoint means adding an entry to `configs/fal_models.yaml` — its parameter
+   names, duration floor and output key — not editing the provider.
 
 ---
 
@@ -145,8 +147,8 @@ Copy `.env.example` to `.env`. Everything is env-driven.
 |---|---|---|
 | `STYLELOOM_LLM_PROVIDER` | `mock` | `mock` \| `anthropic` |
 | `STYLELOOM_VIDEO_PROVIDER` | `mock` | `mock` \| `fal` |
-| `STYLELOOM_FAL_T2I_MODEL` | — | model IDs change between releases; verify on fal.ai |
-| `STYLELOOM_FAL_I2V_MODEL` | — | ditto |
+| `STYLELOOM_FAL_T2I_MODEL` | `fal-ai/flux-2-flex` | must be a key in `configs/fal_models.yaml` |
+| `STYLELOOM_FAL_I2V_MODEL` | `bytedance/seedance-2.0/fast/image-to-video` | ditto |
 | `STYLELOOM_HOOK_CANDIDATE_COUNT` | `5` | candidates per hook generation |
 | `STYLELOOM_HOOK_TOP_K` / `_SOFTMAX_TEMP` | `3` / `0.8` | selection stochasticity |
 
@@ -161,13 +163,20 @@ chosen — including the ones that were not.
 pytest
 ```
 
-Eight tests, no network, no keys. They cover style extraction recovering the
+16 tests, no network, no keys. They cover style extraction recovering the
 fixture's pacing, hook non-determinism, hook candidate distinctness, a full run
 producing a playable MP4, and three batched inputs diverging.
 
-Two of them are regressions for bugs the first implementation had: the outline
-passed the model's raw beat durations straight through (a 7s reference produced
-a 19s video), and duplicate hook candidates made the softmax selection a no-op.
+`test_fal_provider.py` stubs the fal SDK and asserts the payload *shape* per
+endpoint, which is the part that silently breaks: Seedance takes `image_url`,
+Kling takes `start_image_url`, `duration` is a string on both, and Kling infers
+aspect ratio from the start image so sending one is wrong.
+
+Four tests are regressions for bugs found during development: the outline passed
+the model's raw beat durations straight through (a 7s reference produced a 19s
+video), duplicate hook candidates made the softmax selection a no-op, sub-minimum
+shot durations were sent to endpoints that reject them, and
+`max_concurrent_renders` could exceed Kling's per-user limit of 1 and fail a run.
 
 ---
 
@@ -195,5 +204,17 @@ a 19s video), and duplicate hook candidates made the softmax selection a no-op.
 - **Persona consistency is passed through, not enforced.** A reference image
   reaches the keyframe call, but the mock ignores it and real providers vary in
   how well they honour it. Treat cross-shot identity as best-effort.
-- **fal model IDs are deliberately blank.** They change between releases and I
-  did not want to ship an endpoint I could not verify.
+- **Real rendering costs about $11 per video, and discards 80% of what it
+  generates.** Every image-to-video endpoint has a duration floor — Seedance 4s,
+  Kling 3s — while short-form shots run 1–2s. StyleLoom requests the floor and
+  trims, because pacing is the thing the style schema exists to reproduce, but
+  you pay for the full clip. An 11-shot video bills 11 × 4s even though it uses
+  9s. Kling's `multi_prompt` and Seedance's in-generation multi-shot could
+  collapse several shots into one call and cut this substantially; that is the
+  obvious next increment and is not implemented.
+- **Persona consistency only works on Kling v3 endpoints**, via its `elements`
+  parameter. On Seedance the provider emits a warning and proceeds without it
+  rather than silently dropping the reference.
+- **fal endpoint schemas are pinned to July 2026.** They are data
+  (`configs/fal_models.yaml`), not code, but they do go stale — if a request
+  starts failing on a parameter name, check the model page before the code.

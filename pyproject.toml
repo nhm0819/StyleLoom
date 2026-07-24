@@ -16,7 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "pyflakes>=3.2"]
+# Only needed for STYLELOOM_VIDEO_PROVIDER=fal. The default providers are offline.
+fal = ["fal-client>=1.0"]
 
 [build-system]
 requires = ["setuptools>=68"]

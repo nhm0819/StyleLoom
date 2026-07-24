@@ -102,6 +102,23 @@ def burn_caption(clip: Path, shot: Shot, style: CaptionStyle, out_path: Path) ->
     return out_path
 
 
+def trim_to(clip: Path, seconds: float, out_path: Path) -> Path:
+    """Cut a clip down to an exact length, re-encoding rather than stream-copying
+    so the cut lands on the requested frame instead of the nearest keyframe."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    _run(
+        [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", str(clip),
+            "-t", f"{seconds:.3f}",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-an",
+            str(out_path),
+        ]
+    )
+    return out_path
+
+
 def concat(clips: list[Path], out_path: Path, bgm: Path | None = None) -> Path:
     if not clips:
         raise PostError("nothing to concatenate: all shots failed to render")

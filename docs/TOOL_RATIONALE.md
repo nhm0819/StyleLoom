@@ -116,10 +116,55 @@ with the correct shot count, durations and captions. That means the full pipelin
 than the mock footage being pretty.
 
 **fal.ai** was chosen for the one real integration because it fronts several
-different video models behind one queue API (submit → poll → fetch), so a single
-implementation covers multiple models. Model IDs are left blank in `.env.example`
-on purpose: they change between releases, and shipping an endpoint string I could
-not verify would be worse than shipping none.
+video models behind one queue API, so a single implementation covers Seedance,
+Kling and others.
+
+It does *not* front them behind one schema, which was the surprise. Verified
+against the official model pages:
+
+| | Seedance 2.0 | Kling v3 Pro |
+|---|---|---|
+| start image | `image_url` | `start_image_url` |
+| duration | string, 4–15s | string, 3–15s |
+| aspect ratio | `aspect_ratio` param | inferred from image; param ignored |
+| reference character | not on this endpoint | `elements` array |
+| concurrency | not documented | 1 per user |
+
+A single hardcoded payload would fail on at least one of these for every model
+except the one it was written against. Hence `configs/fal_models.yaml`: the
+differences are data, and adding a model is a data change. This is the one place
+the project deliberately buys configurability, because the alternative is not
+simpler code — it is code that silently sends the wrong parameter name.
+
+The official `fal_client` SDK is used rather than hand-rolled HTTP. It owns the
+queue protocol and CDN upload; fal's own documentation discourages base64 data
+URIs above a few KB, and keyframes are hundreds of KB.
+
+---
+
+## The duration floor, and what it costs
+
+Every image-to-video endpoint has a minimum clip length — 4s on Seedance, 3s on
+Kling. Short-form shots run 1–2s. These are irreconcilable, so `render.py`
+requests the floor and trims the result with ffmpeg.
+
+This is the expensive decision in the project, and it was made deliberately:
+
+- An 11-shot video bills 11 × 4s ≈ **$10.64** on Seedance fast, plus keyframes,
+  for roughly **9 seconds of usable footage**. About 80% is discarded.
+- The alternative — stretching shots to the 4s floor — would destroy pacing,
+  which is the single most characteristic property of a short-form style and the
+  thing `style.json` exists to reproduce. A system that cannot hold a 1.2s cut
+  cannot replicate the reference at all.
+
+So the money is spent on the requirement rather than saved by abandoning it.
+
+The real fix is batching: Kling's `multi_prompt` takes a list of shots with
+individual durations in one generation, and Seedance cuts between shots natively
+within a single 15s output. Either would collapse many calls into one and cut
+cost several-fold. Not implemented — it changes the render/assembly boundary
+significantly, and doing it badly would trade a known cost for unpredictable
+pacing.
 
 ---
 

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path("data")
     archetypes_path: Path = Path("configs/archetypes.yaml")
+    fal_models_path: Path = Path("configs/fal_models.yaml")
 
     # --- LLM (planning, hook generation, style synthesis) -------------------
     llm_provider: str = "mock"  # mock | anthropic
@@ -22,8 +23,10 @@ class Settings(BaseSettings):
     # --- Video (keyframe + image-to-video) ---------------------------------
     video_provider: str = "mock"  # mock | fal
     fal_key: str = ""
-    fal_t2i_model: str = ""  # e.g. "fal-ai/flux/dev"
-    fal_i2v_model: str = ""  # e.g. "fal-ai/kling-video/v2/standard/image-to-video"
+    # Must be keys in configs/fal_models.yaml -- the provider validates on start.
+    fal_t2i_model: str = "fal-ai/flux-2-flex"
+    fal_i2v_model: str = "bytedance/seedance-2.0/fast/image-to-video"
+    fal_timeout_sec: float = 600.0
 
     # --- Generation defaults ------------------------------------------------
     width: int = 720

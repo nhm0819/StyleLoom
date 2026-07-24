@@ -1,0 +1,88 @@
+# fal.ai endpoint specs.
+#
+# Model endpoints do NOT share a parameter schema. Verified against the official
+# fal.ai model pages (July 2026):
+#
+#   * Seedance 2.0 takes `image_url`; Kling v3 takes `start_image_url`.
+#   * `duration` is a STRING everywhere, and every i2v model has a floor
+#     (Seedance 4s, Kling 3s) well above a typical short-form shot length.
+#   * Seedance sizes via a `resolution` enum; Flux 2 via an `image_size` object.
+#
+# That is why this file exists instead of one hardcoded payload. Adding a model
+# is a data change, not a code change.
+#
+# `min_duration` is load-bearing: render.py requests the floor and trims the
+# result down to the storyboard's shot length. Getting it wrong means paying for
+# footage you discard, or a clip shorter than the cut it has to fill.
+
+text_to_image:
+  fal-ai/flux-2-flex:
+    # https://fal.ai/models/fal-ai/flux-2-flex
+    size_mode: image_size_object
+    output_key: images
+    defaults:
+      output_format: jpeg
+
+  fal-ai/flux/dev:
+    # https://fal.ai/docs/documentation/model-apis/fal-cdn
+    size_mode: image_size_object
+    output_key: images
+    defaults: {}
+
+image_to_video:
+  bytedance/seedance-2.0/image-to-video:
+    # https://fal.ai/models/bytedance/seedance-2.0/image-to-video
+    image_param: image_url
+    duration_param: duration
+    min_duration: 4
+    max_duration: 15
+    size_mode: resolution_enum
+    resolution: 720p
+    aspect_param: aspect_ratio
+    output_key: video
+    persona_mode: none
+    defaults:
+      generate_audio: false
+
+  bytedance/seedance-2.0/fast/image-to-video:
+    # Identical schema to the standard tier; 720p max.
+    image_param: image_url
+    duration_param: duration
+    min_duration: 4
+    max_duration: 15
+    size_mode: resolution_enum
+    resolution: 720p
+    aspect_param: aspect_ratio
+    output_key: video
+    persona_mode: none
+    defaults:
+      generate_audio: false
+
+  fal-ai/kling-video/v3/pro/image-to-video:
+    # https://fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video
+    # Aspect ratio is inferred from the start image, so no aspect param.
+    # Default concurrency is 1 per user -- see STYLELOOM_MAX_CONCURRENT_RENDERS.
+    image_param: start_image_url
+    duration_param: duration
+    min_duration: 3
+    max_duration: 15
+    size_mode: none
+    output_key: video
+    persona_mode: kling_elements
+    max_concurrency: 1
+    defaults:
+      generate_audio: false
+      negative_prompt: "blur, distort, low quality, on-screen text, subtitles, watermark"
+
+  fal-ai/kling-video/v3/standard/image-to-video:
+    image_param: start_image_url
+    duration_param: duration
+    min_duration: 3
+    max_duration: 15
+    size_mode: none
+    output_key: video
+    persona_mode: kling_elements
+    max_concurrency: 1
+    defaults:
+      generate_audio: false
+      negative_prompt: "blur, distort, low quality, on-screen text, subtitles, watermark"
