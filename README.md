@@ -12,9 +12,16 @@ the same channel.
 ## Install
 
 ```bash
-pip install -e agent-core -e cli
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m pip install -e agent-core -e cli
 styleloom doctor
 ```
+
+`python -m pip` rather than bare `pip` on purpose. Both distributions are editable
+installs, and an editable install binds to whichever interpreter's `site-packages`
+pip happens to belong to. If that is not the interpreter you later run, the install
+succeeds and `import styleloom_core` still fails. `python -m pip` makes the two the
+same by construction. See [Import errors](#import-errors) if you hit it anyway.
 
 `doctor` checks the two things that are easy to miss: `ffmpeg` on `PATH`, and a
 CJK-capable font for Korean captions (`apt install fonts-noto-cjk`). It also prints
@@ -435,6 +442,63 @@ Regression tests exist for bugs found during development:
   byte-identical imagery — a two-cut hook was one frame shown twice
 - `style hooks` reporting "no history" on a style with six entries, after the
   history log grew a `kind` field and the command passed `limit` into it
+
+---
+
+## Import errors
+
+`ModuleNotFoundError: No module named 'styleloom_core'` after the install reported
+success. Both distributions are editable, and an editable install writes an import
+hook holding the **absolute path** of this checkout into one specific interpreter's
+`site-packages`. Two things can therefore be true at once: the package is installed,
+and the interpreter you are running cannot see it.
+
+Run this first — it says which of the two it is:
+
+```bash
+python - <<'EOF'
+import importlib.util, shutil, sys, sysconfig
+print("python    :", sys.executable)
+print("venv      :", "yes" if sys.prefix != sys.base_prefix else "NO")
+print("site-pkgs :", sysconfig.get_paths()["purelib"])
+print("shell pip :", shutil.which("pip"))
+for pkg in ("styleloom_core", "styleloom_cli"):
+    spec = importlib.util.find_spec(pkg)
+    print(f"{pkg:14}:", spec.origin if spec else "NOT FOUND")
+EOF
+```
+
+**Cause 1 — pip and python are different interpreters.** `shell pip` sits under a
+prefix that is not `site-pkgs` (a conda env, a pyenv shim, `/usr/bin/pip` against an
+active venv, or the Windows Store shim). `pip list | grep styleloom` shows both
+packages while the import fails. Reinstall through the interpreter itself:
+
+```bash
+python -m pip install -e agent-core -e cli
+```
+
+**Cause 2 — the checkout moved after install.** The path baked into the import hook
+no longer exists, so the hook resolves nothing. `pip list` still shows the packages,
+pointing at the old location. Reinstall from the current path:
+
+```bash
+python -m pip uninstall -y styleloom-core styleloom-cli
+python -m pip install -e agent-core -e cli
+```
+
+Renaming a parent directory, moving the repo between a Docker build stage and a
+mounted volume, or installing on the host and running in a container all do this.
+
+Verify either fix with:
+
+```bash
+python -c "import styleloom_core, styleloom_cli; print(styleloom_core.__file__)"
+```
+
+The printed path must be inside the checkout you are editing. `pip install -e .` at
+the repo root is not the fix and will fail: the root `pyproject.toml` is a uv
+workspace with no `[project]` table, deliberately, because the installable
+distributions are `agent-core` and `cli`.
 
 ---
 
