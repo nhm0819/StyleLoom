@@ -9,174 +9,432 @@ the same channel.
 
 ---
 
-## Quick start
-
-No API keys required. The default providers are offline (`mock` LLM + ffmpeg
-renderer), so the whole pipeline runs end to end on a fresh clone.
+## Install
 
 ```bash
-pip install -e ".[dev]"
-uvicorn styleloom.api.main:app --reload
-# docs at http://127.0.0.1:8000/docs
+pip install -e agent-core -e cli
+styleloom doctor
 ```
 
-Requires `ffmpeg` on PATH.
+`doctor` checks the two things that are easy to miss: `ffmpeg` on `PATH`, and a
+CJK-capable font for Korean captions (`apt install fonts-noto-cjk`). It also prints
+which providers resolved, and why.
+
+No API keys are required. The defaults fall back to an offline LLM and an
+ffmpeg-only renderer, so the whole pipeline runs end to end on a fresh clone. See
+[API keys](#api-keys) to plug in real models.
+
+---
+
+## Walkthrough
 
 ### 1. Extract a style from reference videos
 
 ```bash
-curl -X POST http://127.0.0.1:8000/styles/extract \
-  -F style_id=my_style \
-  -F files=@refs/ref01.mp4 \
-  -F files=@refs/ref02.mp4
+styleloom style extract my_style refs/ref01.mp4 refs/ref02.mp4
 ```
 
-Returns `style.json`, saved to `data/styles/my_style/`. Edit it by hand and
-`PUT /styles/my_style` if the extractor mislabels something — the schema is the
-contract, not the extractor.
+Writes `data/styles/my_style/style.json`. Pacing, colour and the hook window are
+measured from pixels; only the qualitative names — grade, camera vocabulary, tone —
+come from a model.
+
+If the extractor mislabels something, edit the file and put it back. The schema is
+the contract, not the extractor:
+
+```bash
+styleloom style show my_style > edited.json
+styleloom style set my_style edited.json
+```
 
 ### 2. Generate three videos from three different inputs
 
 ```bash
-curl -X POST http://127.0.0.1:8000/runs/batch \
-  -H 'Content-Type: application/json' \
-  -d '{"style_id":"my_style","inputs":[
-        "회사에서 아무도 안 알려주는 엑셀 단축키",
-        "자취 3년차가 후회하는 가전 구매 순서",
-        "러닝 첫 달에 무릎이 아픈 진짜 이유"]}'
+styleloom batch my_style \
+  -t "회사에서 아무도 안 알려주는 엑셀 단축키" \
+  -t "자취 3년차가 후회하는 가전 구매 순서" \
+  -t "러닝 첫 달에 무릎이 아픈 진짜 이유"
 ```
 
-Poll `GET /runs/{run_id}`, then fetch `GET /runs/{run_id}/video`.
+Each run prints its stages, the hook it generated, its QC score and the path to
+`final.mp4`. The batch then reports how much variety it achieved.
 
-Image or video input instead of text:
+One input at a time, with an image or a video instead of text:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/runs \
-  -F style_id=my_style -F text="이 제품 소개해줘" -F input_file=@product.jpg
+styleloom run my_style --file product.jpg --text "이 제품 소개해줘"
+styleloom run my_style --file clip.mp4
 ```
 
 ### 3. Prove the hook is not frozen
 
 ```bash
-curl -X POST http://127.0.0.1:8000/hooks/preview \
-  -H 'Content-Type: application/json' \
-  -d '{"style_id":"my_style","text":"엑셀 단축키","n":8}'
+styleloom hook preview my_style -t "엑셀 단축키" -n 8
 ```
 
-Same input, eight generations. The response reports `distinct_archetypes` and
-`distinct_texts` directly, so the non-determinism requirement is checkable in
-one call rather than taken on faith.
+Same input, eight generations, no rendering. Reports `distinct archetypes` and
+`distinct texts` directly, so the non-determinism requirement is checkable in one
+command rather than taken on faith. A preview writes nothing to disk, so it cannot
+skew the next real run.
+
+To see how a finished run decided:
+
+```bash
+styleloom runs ls
+styleloom runs hook <run_id>       # pool, sampled archetype, candidates, scores
+styleloom style history my_style   # what this style used recently, per element
+```
+
+### 4. Check what a run will cost
+
+```bash
+styleloom models --style my_style
+```
+
+Prices every endpoint in `configs/fal_models.yaml` against that style's own shot
+count, and shows what `multi_shot` mode would save. Arithmetic only — no API calls.
+
+### 5. Collect the submission bundle
+
+```bash
+styleloom export bundle/
+```
+
+Pairs each video with the exact prompt that produced it, in generation order:
+
+```
+bundle/
+├── 01_run_....mp4  02_run_....mp4  03_run_....mp4
+├── prompts.txt          input + hook + cast + qc, plain text
+├── manifest.json        the same, machine-readable
+└── runs/<run_id>/       per-stage artifacts for each video
+```
+
+---
+
+## Command reference
+
+| Command | What it does |
+|---|---|
+| `styleloom style extract <id> <refs...>` | Reference videos → `style.json`. `--force` to overwrite |
+| `styleloom style ls` | Saved styles, with each one's recent hook archetypes |
+| `styleloom style show <id>` | Print `style.json` |
+| `styleloom style set <id> <file>` | Replace it with a hand-edited copy (validated) |
+| `styleloom style history <id>` | Recent hook / creator / setting choices. `--kind` to filter |
+| `styleloom run <id>` | One input → one video. `--text`, `--file`, `--bgm`, `--persona`, `--lang` |
+| `styleloom batch <id>` | Several inputs through one system. Repeat `-t` / `-f`, or `--inputs-file` |
+| `styleloom runs ls` | Recent runs, status, hook, QC score. `--style` to filter |
+| `styleloom runs show <run_id>` | The run record |
+| `styleloom runs hook <run_id>` | The full hook decision trail for that run |
+| `styleloom hook preview <id>` | N hook generations from one input, no rendering |
+| `styleloom models` | Endpoint specs and per-video cost. `--style` for real numbers |
+| `styleloom export <dir>` | Submission bundle. `--run` to pick runs, `-n` for how many |
+| `styleloom plan` | The pipeline and each stage's input/output artifacts |
+| `styleloom doctor` | ffmpeg, fonts, providers, config paths, render mode |
+| `styleloom version` | Both distribution versions |
+
+`--data-dir`, `--llm`, `--video` and `--render-mode` override settings for a single
+invocation.
 
 ---
 
 ## Pipeline
 
-```
-reference videos ──▶ ① ANALYZE ──▶ style.json  (reusable asset)
-                                        │
-user input (text/image/video) ──▶ ② INGEST ──▶ brief.json
-                                        │
-                                        ▼
-                               ③ OUTLINE ──▶ outline.json   (body beats + payoff)
-                                        │
-                                        ▼
-                               ④ HOOK ──▶ hook.json         ★ non-deterministic
-                                        │
-                                        ▼
-                               ⑤ STORYBOARD ──▶ storyboard.json
-                                        │
-                                        ▼
-                               ⑥ RENDER  (t2i keyframe → i2v clip, per shot)
-                                        │
-                                        ▼
-                               ⑦ POST    (burn captions → concat)
-                                        │
-                                        ▼
-                               ⑧ QC ──▶ qc_report.json
+```bash
+$ styleloom plan
+1. ingest      (- -> brief)
+2. casting     (style, brief -> casting)
+3. outline     (style, brief -> outline)
+4. hook        (style, brief, outline -> hook)
+5. storyboard  (style, brief, casting, outline, hook -> storyboard)
+6. render      (storyboard, casting -> render)
+7. assemble    (style, storyboard, render -> assemble)
+8. qc          (style, storyboard, render, assemble -> qc)
 ```
 
-Every stage is `JSON in → JSON out` and writes its artifact to
-`data/runs/<run_id>/`. A finished run is fully inspectable; a failed run shows
-exactly which stage broke.
+Reference videos go through a separate entry point (`style extract`) because
+`style.json` is a reusable asset, not a per-run artifact.
+
+Every stage is `JSON in → JSON out` and writes its artifact to `data/runs/<run_id>/`:
+
+```
+data/runs/<run_id>/
+├── run.json          status, stage, hook, qc score
+├── inputs.json       what the caller supplied
+├── style_used.json   snapshot of the style this run actually ran on
+├── brief.json        normalised input
+├── casting.json      creator + background, and the pools they came from
+├── outline.json      body beats + payoff
+├── hook.json         pool, sampled archetype, every candidate, selection method
+├── storyboard.json   per-shot prompts, sizes, durations, captions
+├── render.json       clip segments and per-shot errors
+├── assemble.json     final video path
+├── qc_report.json    measured conformance to the style
+└── final.mp4
+```
+
+A finished run is fully inspectable; a failed run shows exactly which stage broke
+and leaves the earlier artifacts intact.
+
+The step order is data, and it is validated before execution: a stage that reads an
+artifact nothing earlier writes fails at plan time with the artifact named, rather
+than at render time after money has been spent.
+
+### What changes between the three videos
+
+The assignment asks that outputs differ in more than styling. Three elements are
+drawn per run, all by the system and none from the user's input:
+
+| Element | Pool | Reaches the output as |
+|---|---|---|
+| **Hook** (required) | `configs/archetypes.yaml` | The first 3 seconds: on-screen text and opening visual |
+| **Creator** (recommended) | `configs/casting.yaml` → `creators` | Presenter tokens leading every shot prompt, plus a generated reference portrait where the endpoint supports one |
+| **Background** (recommended) | `configs/casting.yaml` → `settings` | Location tokens in every shot prompt |
+
+All three use the same draw: weighted sample, penalised by what this style used in
+its recent runs, entropy from `secrets.SystemRandom`. `styleloom style history`
+shows the window that penalty is reading.
 
 ### Why the hook comes *after* the outline
 
-A hook is a promise the body has to pay off. Generating it first would produce a
-generic attention grabber; generating it fourth means it can reference the
-actual payoff. `generate_hook` receives `outline.payoff` explicitly and is
-instructed never to bait something the video does not deliver.
+A hook is a promise the body has to pay off. Generating it first produces a generic
+attention grabber; generating it fourth lets it reference the actual payoff. The
+hook tool receives `outline.payoff` explicitly and is instructed never to bait
+something the video does not deliver.
 
 ### How the hook varies across reruns
 
-Temperature alone would make variation an accident. Three independent
-randomisation points instead:
+Temperature alone would make variation an accident. Three independent randomisation
+points instead:
 
 | Point | Mechanism | Effect |
 |---|---|---|
-| Archetype | weighted draw from `configs/archetypes.yaml`, with a recency penalty over the last 4 runs of the same style | a *structurally* different opening, not a paraphrase |
+| Archetype | weighted draw with a recency penalty over this style's last 4 runs | a *structurally* different opening, not a paraphrase |
 | Candidates | N generations, temperature 0.9, no seed | lexical variety within the archetype |
 | Selection | top-k softmax sample instead of argmax | the best candidate is favoured, not guaranteed |
 
-Entropy comes from `secrets.SystemRandom` — OS entropy, unseeded, so a run can
-never accidentally repeat. Every decision (pool, sampled archetype, all
-candidates with scores, selection method) is written to `hook.json`.
+Every decision is written to `hook.json`: the pool, the sampled archetype, all
+candidates with scores, the selection method, and the entropy source.
 
-The recency penalty is why `POST /runs/batch` with three inputs gives three
-different archetypes: each run sees what the previous ones chose.
+**The recency penalty biases, it does not forbid.** At the default of 0.35 a
+recently used archetype's weight is multiplied rather than removed — measured over
+4,000 draws on the bundled six-archetype pool, that takes one archetype from ~17%
+to ~7%. So a batch of three usually gets three different archetypes and sometimes
+two; the hook *text* differs every time. For guaranteed variety set
+`STYLELOOM_HOOK_RECENCY_PENALTY=0`, which makes the exclusion hard.
+
+### Render mode: `per_shot` or `multi_shot`
+
+Every image-to-video endpoint bills a minimum clip length — 3s on Kling, 4s on
+Seedance — while short-form cuts run 1–2s. There are two ways to live with that,
+and the choice is yours:
+
+```bash
+styleloom run my_style -t "..." --render-mode multi_shot
+```
+
+| | `per_shot` (default) | `multi_shot` |
+|---|---|---|
+| Calls | one per cut | one per ~15s window |
+| Billed | the floor, every cut | the delivered length |
+| 30s / 20 cuts on Kling v3 Pro | $6.72, half discarded | **$3.36, nothing discarded** |
+| Cut timing | exact — ffmpeg trims each file | **the model's** — requested, then measured |
+| One failure costs | one shot | a whole window |
+| Captions | one per clip | placed by timestamp inside the clip |
+
+`per_shot` is the default because shot durations are exact by construction, and
+pacing is the property the style schema exists to reproduce. `multi_shot` is roughly
+half the cost and asks the endpoint to cut where told — `qc` reports
+`cut_timing_drift` so you can tell whether it complied.
+
+**Not verified against a paid endpoint.** Offline the sequence renderer is ffmpeg,
+which cuts exactly where told, so drift is zero in both modes and only the plumbing
+is proven. Before committing to `multi_shot`, run one window on a real endpoint and
+read `cut_timing_drift` — see [docs/RETROSPECTIVE.md](docs/RETROSPECTIVE.md).
+
+### Quality control
+
+`qc` re-probes the finished video with the *same* measurement used on the reference
+and diffs the numbers. Using one function for both sides matters: a separate
+verifier can be wrong on its own.
+
+| Check | Target | Tolerance |
+|---|---|---|
+| `avg_shot_sec` | `style.pacing.avg_shot_sec` | ±0.6s |
+| `total_duration` | `style.total_duration` | ±6.0s |
+| `saturation` / `contrast` / `warmth` | `style.look` | ±0.18 / ±0.20 / ±0.12 |
+| `hook_window_shots` | `style.hook_style.cut_count` | ±0.5 |
+| `cut_timing_drift` | 0 — requested cuts vs cuts actually present | ±0.35s |
+
+The score is the share of checks that pass; ≥0.7 is a pass. Tolerances sit where a
+viewer stops noticing, not where the offline renderer happens to pass.
 
 ---
 
-## Reusing this with your own references
+## Structure
 
-Nothing about a specific reference video is in the code. To retarget:
+```
+StyleLoom/
+├── agent-core/                distribution: styleloom-core
+│   └── styleloom_core/          framework-independent library
+│       ├── schema.py              data contracts
+│       ├── config.py              Settings, env-driven, injected not global
+│       ├── context.py             settings + providers + stores + event sink
+│       ├── events.py              Event, EventSink protocol
+│       ├── errors.py              error taxonomy
+│       ├── media.py               ffmpeg + OpenCV primitives
+│       ├── sampling.py            weighted draw with recency penalty
+│       ├── providers/             LLM and video adapters
+│       ├── memory/                StyleStore, RunStore, ChoiceHistory
+│       ├── session/               per-run state and artifact bag
+│       ├── tools/                 one module per stage, plus the registry
+│       ├── planner/               builds and validates the execution order
+│       └── runner/                executes a plan, emits events
+├── cli/                       distribution: styleloom-cli
+│   └── styleloom_cli/
+│       ├── main.py                typer app
+│       ├── console.py             renders core events to a terminal
+│       ├── options.py             shared flags, core errors → clean exits
+│       └── commands/              style, run, runs, hook, models, export
+├── configs/                   archetypes, casting pools, endpoint specs (data)
+├── docs/
+└── data/                      styles/ runs/ uploads/
+```
 
-1. `POST /styles/extract` with your videos → a new `style.json`.
-2. Optionally edit `configs/archetypes.yaml`, or point
-   `STYLELOOM_ARCHETYPES_PATH` at your own file. No code change.
-3. Point `STYLELOOM_VIDEO_PROVIDER=fal` at whichever models you use. Adding an
-   endpoint means adding an entry to `configs/fal_models.yaml` — its parameter
-   names, duration floor and output key — not editing the provider.
+Two distributions rather than one package, because "framework independent" is only
+enforceable as a dependency boundary: `styleloom-core` cannot import typer because
+typer is not among its dependencies. A test reads the installed metadata to keep it
+that way.
+
+### Using the core directly
+
+The CLI is one caller. The library is the product:
+
+```python
+from styleloom_core import RunInputs, Settings, build_context, run_batch
+
+ctx = build_context(Settings())
+records = run_batch(ctx, "my_style", [RunInputs(text=t) for t in topics])
+```
+
+`run_once` / `run_batch` / `extract_style` are the whole surface for producing
+video. An API route or a queue consumer would call the same functions and swap the
+event sink — which is what makes them additive rather than a rewrite.
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — data flow diagram, layering, and
+  the API/worker extension path
+- [docs/TOOL_RATIONALE.md](docs/TOOL_RATIONALE.md) — what each tool is and why,
+  including the alternatives that were rejected and the model cost comparison
+- [docs/RETROSPECTIVE.md](docs/RETROSPECTIVE.md) — assumptions, where this got
+  stuck, what was measured versus what remains unverified, and how to make the
+  system judge its own output
 
 ---
+
+## Retargeting to your own references
+
+Nothing about a specific reference video is in the code:
+
+1. `styleloom style extract <id> your/refs/*.mp4` → a new `style.json`.
+2. Edit `configs/archetypes.yaml` and `configs/casting.yaml`, or point
+   `STYLELOOM_ARCHETYPES_PATH` / `STYLELOOM_CASTING_PATH` at your own files. The
+   bundled casting pools are written for a beauty/skincare channel; a different
+   vertical wants different creators and locations.
+3. Adding a video model means adding an entry to `configs/fal_models.yaml` — its
+   parameter names, duration floor and output key — not editing the provider.
+
+---
+
+## API keys
+
+Copy `.env.example` to `.env`, or just export the variables. **No key is hardcoded
+anywhere**, and the repo runs end to end without any.
+
+| Variable | Where to get it | What it is used for | Without it |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API keys | Brief extraction, outline, hook candidates, naming the reference's grade and tone | Offline `mock` LLM: real structure, placeholder wording |
+| `FAL_KEY` | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) | Keyframes (Flux 2) and image-to-video (Kling / Seedance) | ffmpeg `mock` renderer: real MP4s, gradient footage |
+
+Both are also accepted as `STYLELOOM_ANTHROPIC_API_KEY` / `STYLELOOM_FAL_KEY`, which
+win if both forms are set.
+
+**Providers default to `auto`**: each uses the real service when its key is present
+and the offline mock when it is not. Injecting a key is the only step — there is no
+second variable to remember. Every run prints its resolution before doing any work:
+
+```
+providers: llm=anthropic (auto) video=fal (auto) render=per_shot
+```
+
+Real video also needs the optional client:
+
+```bash
+pip install 'styleloom-core[fal]'
+```
+
+To pin a provider regardless of keys — offline testing on a keyed machine — set
+`STYLELOOM_LLM_PROVIDER=mock` or `STYLELOOM_VIDEO_PROVIDER=mock`.
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Everything is env-driven.
-
 | Variable | Default | Notes |
 |---|---|---|
-| `STYLELOOM_LLM_PROVIDER` | `mock` | `mock` \| `anthropic` |
-| `STYLELOOM_VIDEO_PROVIDER` | `mock` | `mock` \| `fal` |
+| `STYLELOOM_DATA_DIR` | `data` | Styles, runs and uploads live here |
+| `STYLELOOM_LLM_PROVIDER` | `auto` | `auto` \| `mock` \| `anthropic` |
+| `STYLELOOM_LLM_MODEL` | `claude-sonnet-5` | |
+| `STYLELOOM_VIDEO_PROVIDER` | `auto` | `auto` \| `mock` \| `fal` |
 | `STYLELOOM_FAL_T2I_MODEL` | `fal-ai/flux-2-flex` | must be a key in `configs/fal_models.yaml` |
-| `STYLELOOM_FAL_I2V_MODEL` | `bytedance/seedance-2.0/fast/image-to-video` | ditto |
-| `STYLELOOM_HOOK_CANDIDATE_COUNT` | `5` | candidates per hook generation |
-| `STYLELOOM_HOOK_TOP_K` / `_SOFTMAX_TEMP` | `3` / `0.8` | selection stochasticity |
+| `STYLELOOM_FAL_I2V_MODEL` | `fal-ai/kling-video/v3/pro/image-to-video` | ditto. `styleloom models` prices the alternatives |
+| `STYLELOOM_FAL_TIMEOUT_SEC` | `600` | Per generation |
+| `STYLELOOM_RENDER_MODE` | `per_shot` | `per_shot` \| `multi_shot` |
+| `STYLELOOM_WIDTH` / `_HEIGHT` / `_FPS` | `720` / `1280` / `30` | Vertical 9:16 by default |
+| `STYLELOOM_HOOK_CANDIDATE_COUNT` | `5` | Candidates per hook generation |
+| `STYLELOOM_HOOK_TEMPERATURE` | `0.9` | |
+| `STYLELOOM_HOOK_TOP_K` / `_SOFTMAX_TEMP` | `3` / `0.8` | Selection stochasticity |
+| `STYLELOOM_HOOK_RECENCY_WINDOW` | `4` | How many recent runs are penalised |
+| `STYLELOOM_HOOK_RECENCY_PENALTY` | `0.35` | Weight multiplier. `0` = hard exclusion |
+| `STYLELOOM_MAX_CONCURRENT_RENDERS` | `3` | Upper bound; endpoint limits clamp it down |
+| `STYLELOOM_ARCHETYPES_PATH` | `configs/archetypes.yaml` | Hook archetype pool |
+| `STYLELOOM_CASTING_PATH` | `configs/casting.yaml` | Creator and background pools |
+| `STYLELOOM_FAL_MODELS_PATH` | `configs/fal_models.yaml` | Endpoint specs |
 
-See [`docs/TOOL_RATIONALE.md`](docs/TOOL_RATIONALE.md) for why each tool was
-chosen — including the ones that were not.
+Config files fall back to the copies bundled in the repo, so a fresh clone runs from
+any working directory.
 
 ---
 
 ## Tests
 
 ```bash
-pytest
+pip install pytest
+python -m pytest
 ```
 
-16 tests, no network, no keys. They cover style extraction recovering the
-fixture's pacing, hook non-determinism, hook candidate distinctness, a full run
-producing a playable MP4, and three batched inputs diverging.
+192 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+goes stale, along with any command, setting or default this README describes but
+the code no longer has. They cover style extraction recovering the fixture's
+pacing, hook non-determinism and the recency penalty's measured effect, casting
+varying creator and background, plan validation rejecting a misordered pipeline, a
+full run producing a playable MP4 with one artifact per stage, three batched inputs
+diverging, both render modes producing the same shape of output, and failure
+isolating to the stage that broke.
 
 `test_fal_provider.py` stubs the fal SDK and asserts the payload *shape* per
-endpoint, which is the part that silently breaks: Seedance takes `image_url`,
-Kling takes `start_image_url`, `duration` is a string on both, and Kling infers
-aspect ratio from the start image so sending one is wrong.
+endpoint, which is the part that silently breaks: Seedance takes `image_url`, Kling
+takes `start_image_url`, `duration` is a string on both, and Kling infers aspect
+ratio from the start image so sending one is wrong.
 
-Four tests are regressions for bugs found during development: the outline passed
-the model's raw beat durations straight through (a 7s reference produced a 19s
-video), duplicate hook candidates made the softmax selection a no-op, sub-minimum
-shot durations were sent to endpoints that reject them, and
-`max_concurrent_renders` could exceed Kling's per-user limit of 1 and fail a run.
+Regression tests exist for bugs found during development:
+
+- the outline passing the model's raw beat durations straight through, so a 7s
+  reference produced a 19s video
+- duplicate hook candidates making the softmax selection a no-op
+- `max_concurrent_renders` exceeding Kling's per-user limit of 1
+- adding `validation_alias` to the key fields making `Settings(fal_key=...)`
+  evaluate to `""` with no exception
+- the camera move living only in the motion prompt, so consecutive cuts requested
+  byte-identical imagery — a two-cut hook was one frame shown twice
+- `style hooks` reporting "no history" on a style with six entries, after the
+  history log grew a `kind` field and the command passed `limit` into it
 
 ---
 
@@ -184,37 +442,43 @@ shot durations were sent to endpoints that reject them, and
 
 **These are real, not hedging.**
 
-- **Mock output is structurally correct, not watchable.** The offline renderer
-  makes gradient keyframes with a push-in. It exists so the harness is runnable
-  and gradeable without keys. Set a real provider for output you would publish.
-- **Mock QC scores ~0.5–0.7 by design.** The mock renderer makes no attempt to
-  match the reference's colour grade, so the grade checks correctly fail. Making
-  the mock pass its own QC would make QC meaningless. With a real provider these
-  checks become informative.
-- **BPM is estimated from cut intervals**, not audio onsets. Short-form edits cut
-  on the beat often enough for this to be useful, but it is a heuristic, and it
-  is wrong on footage that does not cut to music.
-- **Shot-size distribution is not measured.** `analyze` recovers pacing and
-  grade from pixels; shot size currently falls back to the schema default and is
-  meant to be corrected via `PUT /styles/{id}`. Measuring it needs subject
-  detection, which is the obvious next increment.
-- **Background jobs run in-process** via FastAPI `BackgroundTasks`. Restarting
-  the server loses in-flight runs. Fine for a single-operator harness; swap
-  `runner.execute` onto a queue if you need durability.
-- **Persona consistency is passed through, not enforced.** A reference image
-  reaches the keyframe call, but the mock ignores it and real providers vary in
-  how well they honour it. Treat cross-shot identity as best-effort.
-- **Real rendering costs about $11 per video, and discards 80% of what it
-  generates.** Every image-to-video endpoint has a duration floor — Seedance 4s,
-  Kling 3s — while short-form shots run 1–2s. StyleLoom requests the floor and
-  trims, because pacing is the thing the style schema exists to reproduce, but
-  you pay for the full clip. An 11-shot video bills 11 × 4s even though it uses
-  9s. Kling's `multi_prompt` and Seedance's in-generation multi-shot could
-  collapse several shots into one call and cut this substantially; that is the
-  obvious next increment and is not implemented.
-- **Persona consistency only works on Kling v3 endpoints**, via its `elements`
-  parameter. On Seedance the provider emits a warning and proceeds without it
-  rather than silently dropping the reference.
+- **Mock output is structurally correct, not watchable.** The offline renderer makes
+  gradient keyframes with a push-in. It exists so the harness is runnable and
+  gradeable without keys. Set a real provider for output you would publish.
+- **Mock QC scores below 1.0 by design.** The offline renderer makes no attempt to
+  match the reference's colour grade, so the grade checks correctly fail. Making the
+  mock pass its own QC would make QC meaningless. Pacing, runtime, hook window and
+  cut timing *do* pass offline, because those are reproducible by construction.
+- **`multi_shot` is implemented but unproven on a real endpoint.** Offline drift is
+  always zero because the offline sequence renderer *is* ffmpeg, so what has been
+  verified is the plumbing — segments, captions by timestamp, the drift check — not
+  the endpoint's obedience. `per_shot` remains the default for that reason.
+- **`per_shot` discards most of what it generates.** At 20 cuts on Kling v3 Pro it
+  bills 60s to deliver 30s. A deliberate trade: stretching shots to fill the floor
+  would destroy the pacing the style schema exists to reproduce. Run
+  `styleloom models` for the arithmetic on your own style.
+- **Shot-size distribution is not measured.** Extraction recovers pacing and grade
+  from pixels; shot size falls back to the schema default and is meant to be
+  corrected via `styleloom style set`. Measuring it needs subject detection, which is
+  the obvious next increment — and it shows, because the bundled references are
+  person-centred.
+- **BPM is estimated from cut intervals**, not audio onsets. Short-form edits cut on
+  the beat often enough for this to be useful, but it is a heuristic and it is wrong
+  on footage that does not.
+- **Caption timing is per shot, not per beat.** `CaptionStyle.appear_on_beat` exists
+  in the schema and is not yet honoured; captions land at shot boundaries.
+- **Creator consistency is best-effort, and only on Kling v3** via its `elements`
+  parameter. On Seedance the provider warns and proceeds rather than silently
+  dropping the reference. Offline the creator varies through prompt tokens only.
+- **Runs are in-process.** `styleloom batch` blocks until done, and killing it loses
+  the current run — earlier completed runs are already on disk. Fine for a
+  single-operator harness.
 - **fal endpoint schemas are pinned to July 2026.** They are data
-  (`configs/fal_models.yaml`), not code, but they do go stale — if a request
-  starts failing on a parameter name, check the model page before the code.
+  (`configs/fal_models.yaml`), not code, but they do go stale — if a request starts
+  failing on a parameter name, check the model page before the code. One field is
+  flagged in that file as inferred rather than verified.
+- **Reference videos are used for analysis only.** Extraction reads measurements and
+  keyframes from them; no reference footage is ever placed in an output.
+- **`api/`, `worker/`, `infra/` and `observability/` are not implemented.** The seams
+  they attach to exist and are documented; the directories are deliberately absent
+  rather than stubbed, so the repo does not imply commitments it has not made.

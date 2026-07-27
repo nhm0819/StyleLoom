@@ -1,0 +1,22 @@
+.git/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets never enter an image.
+.env
+
+# Generated media is large and is regenerated per run; the .gitkeep files keep
+# the layout without shipping the contents.
+data/runs/*
+data/styles/*
+data/uploads/*
+
+# ffmpeg and a CJK font are runtime requirements, not build artifacts -- install
+# them in the image rather than copying anything from here.

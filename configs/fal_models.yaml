@@ -14,6 +14,26 @@
 # `min_duration` is load-bearing: render.py requests the floor and trims the
 # result down to the storyboard's shot length. Getting it wrong means paying for
 # footage you discard, or a clip shorter than the cut it has to fill.
+#
+# `price_per_sec` is recorded so `styleloom models` can price a style before you
+# spend anything. Rates move; the source and date are below and worth re-checking.
+# Where a rate is not recorded it is left out rather than guessed.
+#
+# `capabilities` is what the provider does NOT yet use, but the cost estimator
+# does: `multi_prompt` marks endpoints that accept a list of {prompt, duration}
+# shots in ONE generation, which removes the per-shot duration floor entirely.
+#
+# CANDIDATES NOT ADDED HERE. Each needs its parameter names read off the model
+# page first -- guessing them is exactly the failure this file exists to prevent:
+#   * google/nano-banana-2         t2i, holds one person's identity across
+#                                  generations without fine-tuning; the natural
+#                                  upgrade for casting's creator portrait
+#   * alibaba/happy-horse/i2v      native Korean lip-sync, $0.14/s @720p
+#   * fal-ai/kling-video/o3/pro    start+end frame, also has multi_prompt
+
+pricing_source: >-
+  fal.ai/learn/tools/best-image-to-video-apis-2026, retrieved 2026-07-26,
+  Elo figures stated as of 2026-06-14.
 
 text_to_image:
   fal-ai/flux-2-flex:
@@ -32,6 +52,10 @@ text_to_image:
 image_to_video:
   bytedance/seedance-2.0/image-to-video:
     # https://fal.ai/models/bytedance/seedance-2.0/image-to-video
+    # Highest output quality of the endpoints here (Elo 1194, rank 1) and the most
+    # expensive by a wide margin. Native audio is included at no extra charge.
+    price_per_sec: 0.3034      # 720p. 1080p is 0.682.
+    quality_elo: 1194
     image_param: image_url
     duration_param: duration
     min_duration: 4
@@ -45,7 +69,10 @@ image_to_video:
       generate_audio: false
 
   bytedance/seedance-2.0/fast/image-to-video:
-    # Identical schema to the standard tier; 720p max.
+    # Identical schema to the standard tier; 720p max. A cheaper tier exists but
+    # fal's comparison guide does not publish its per-second rate, so no
+    # price_per_sec is recorded here -- the estimator will say so rather than
+    # invent a number.
     image_param: image_url
     duration_param: duration
     min_duration: 4
@@ -60,8 +87,29 @@ image_to_video:
 
   fal-ai/kling-video/v3/pro/image-to-video:
     # https://fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video
-    # Aspect ratio is inferred from the start image, so no aspect param.
-    # Default concurrency is 1 per user -- see STYLELOOM_MAX_CONCURRENT_RENDERS.
+    # The default. Aspect ratio is inferred from the start image, so no aspect
+    # param. Default concurrency is 1 per user -- see MAX_CONCURRENT_RENDERS.
+    #
+    # Chosen over the higher-scoring Seedance 2.0 because of the two capabilities
+    # below, both of which this system's requirements depend on:
+    #   elements     -- the only character-reference path here, so the cast
+    #                   creator survives across cuts
+    #   multi_prompt -- a list of {prompt, duration} shots in one generation, so
+    #                   a 1.2s cut costs 1.2s instead of the 3s floor
+    price_per_sec: 0.112       # audio off. 0.168 with audio, 0.196 with voice control.
+    price_per_sec_audio: 0.168
+    quality_elo: 1075
+    capabilities: [multi_prompt, elements]
+    multi_prompt_param: multi_prompt
+    # UNVERIFIED. The top-level `duration` is a string on every fal endpoint, so
+    # the nested per-shot duration is sent as a string for consistency. This was
+    # inferred from the sibling parameter, not read off the model page, and a
+    # wrong type here is the kind of thing fal ignores silently. If a multi_shot
+    # request is rejected or comes back the wrong length, change this to `number`
+    # first -- it is a one-line data change and the payload builder is unit-tested
+    # against both.
+    multi_prompt_duration_type: string
+    max_shot_window_sec: 15
     image_param: start_image_url
     duration_param: duration
     min_duration: 3
@@ -75,6 +123,8 @@ image_to_video:
       negative_prompt: "blur, distort, low quality, on-screen text, subtitles, watermark"
 
   fal-ai/kling-video/v3/standard/image-to-video:
+    # Cheaper Kling tier. multi_prompt is documented for the Pro endpoint; not
+    # confirmed here, so it is not claimed.
     image_param: start_image_url
     duration_param: duration
     min_duration: 3

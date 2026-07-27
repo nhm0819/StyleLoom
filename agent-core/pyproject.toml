@@ -1,0 +1,27 @@
+[project]
+name = "styleloom-core"
+version = "0.2.0"
+description = "Style decomposition and short-form video generation. Framework-independent core."
+requires-python = ">=3.11"
+# Deliberately no web or CLI framework here. If `pip show styleloom-core` ever
+# lists fastapi or typer, the boundary this package exists to hold has broken.
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "PyYAML>=6.0",
+    "httpx>=0.27",
+    "opencv-python-headless>=4.9",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# Only needed for STYLELOOM_VIDEO_PROVIDER=fal. Defaults are offline.
+fal = ["fal-client>=1.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["styleloom_core*"]

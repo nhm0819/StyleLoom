@@ -1,32 +1,35 @@
-[project]
-name = "styleloom"
-version = "0.1.0"
-description = "Decompose a reference short-form video into a reusable style schema, then generate new videos in that style."
-requires-python = ">=3.11"
-dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
-    "pydantic>=2.7",
-    "pydantic-settings>=2.3",
-    "python-multipart>=0.0.9",
-    "httpx>=0.27",
-    "PyYAML>=6.0",
-    "opencv-python-headless>=4.9",
-    "numpy>=1.26",
-]
+# Workspace root. Not an installable package itself -- the two distributions live
+# in agent-core/ and cli/.
+#
+# Why two distributions rather than one package with subfolders: "framework
+# independent" is only enforceable as a dependency boundary. styleloom-core
+# cannot import typer because typer is not in its dependency list, and that stays
+# true as the project grows. Folder names alone would not stop it.
+#
+# When api/ and worker/ arrive they become members here too, each depending on
+# styleloom-core and never on each other.
 
-[project.optional-dependencies]
-dev = ["pytest>=8.0", "pyflakes>=3.2"]
-# Only needed for STYLELOOM_VIDEO_PROVIDER=fal. The default providers are offline.
-fal = ["fal-client>=1.0"]
+[tool.uv.workspace]
+members = ["agent-core", "cli"]
 
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+[tool.uv.sources]
+styleloom-core = { workspace = true }
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
+testpaths = ["agent-core/tests", "cli/tests"]
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 95
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# UP042 wants StrEnum instead of (str, Enum). Declined: StrEnum changes what
+# str(member) returns, and these enums are serialised by pydantic and read from
+# JSON by transports. The current form is correct and the churn carries risk
+# without benefit.
+ignore = ["UP042"]

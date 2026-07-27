@@ -1,7 +1,23 @@
 # Tool rationale
 
-Why each choice was made, including the alternatives that were rejected. The
-assignment asks for this explicitly.
+Why each choice was made, including the alternatives that were rejected.
+
+## Summary
+
+| Tool | Role | Why this one |
+|---|---|---|
+| **ffmpeg** | cut, trim, concat, burn captions | Cut timing and caption position are deterministic operations; a model does them worse than a `for` loop and gives up reproducibility. |
+| **OpenCV** | measure pacing, colour, keyframes | Style properties have to be numbers to be reproducible *and* checkable in QC. One decode pass yields cuts, colour stats and keyframes together. |
+| **Claude Sonnet 5** (Anthropic) | brief, outline, hook candidates, style naming | Vision-capable, so reference keyframes go in alongside the measured stats; reliable structured JSON under an explicit schema. |
+| **fal.ai** | keyframe + image-to-video | Fronts Seedance, Kling and others behind one queue API, so one implementation covers several frontier models as they turn over. |
+| **Flux 2 Flex** (via fal) | text-to-image keyframes | Takes an `image_size` object, so 9:16 is requested directly rather than cropped afterwards. |
+| **Kling v3 Pro** (via fal) | image-to-video, **default** | The only endpoint here with a character reference (`elements`) *and* `multi_prompt`. At $0.112/s it is a third of Seedance's rate. |
+| **Seedance 2.0** (via fal) | image-to-video, quality tier | Ranks first on the Artificial Analysis image-to-video board. Costs ~7x the default per video and cannot hold a character reference. |
+| **pydantic** | data contracts, settings | Every stage artifact is written to disk and read back; validation at the boundary is the contract. Env-driven settings come free. |
+| **Typer** | CLI | Type hints *are* the parser, so the command signature and its validation are one declaration instead of two. |
+| **pytest** | tests | 137 tests, no network, no keys. |
+
+Detail and rejected alternatives below.
 
 ---
 
@@ -10,84 +26,112 @@ assignment asks for this explicitly.
 The pipeline generates footage with a model but assembles, captions and times it
 with ffmpeg.
 
-Fully synthetic generation of a 30-second multi-shot video is still unreliable
-for the thing that actually defines a short-form style: exact cut timing and
-caption placement. Those are deterministic operations. Handing them to a
-probabilistic model buys nothing and loses reproducibility — and reproducibility
-is the entire claim being made.
+Fully synthetic generation of a 30-second multi-shot video is still unreliable at
+the thing that actually defines a short-form style: exact cut timing and caption
+placement. Those are deterministic operations. Handing them to a probabilistic
+model buys nothing and loses reproducibility — and reproducibility is the entire
+claim being made.
 
-So: the model does what only a model can do (imagery, motion), and ffmpeg does
-what a model does worse than a `for` loop (cutting on a schedule, burning text at
-a fixed position).
+So the model does what only a model can do (imagery, motion), and ffmpeg does what
+a model does worse than a `for` loop (cutting on a schedule, burning text at a
+fixed position).
 
 ---
 
 ## Two-stage render: text → keyframe → motion
 
-`render.py` does not call text-to-video directly. It generates a still keyframe,
-then animates it.
+`tools/render.py` does not call text-to-video directly. It generates a still
+keyframe, then animates it.
 
-Reason: shot-to-shot consistency of colour grade and subject identity is what
-makes a set of clips read as one channel. Image models are cheaper to iterate,
-easier to constrain with a reference image, and produce a *fixed* look that the
-video model then only has to move. Straight text-to-video re-rolls the look on
-every shot, and by shot six the grade has drifted.
-
-Cost matters too — a rejected keyframe is far cheaper to discard than a rejected
-clip.
+Shot-to-shot consistency of colour grade and subject identity is what makes a set
+of clips read as one channel. Image models are cheaper to iterate, easier to
+constrain with a reference image, and produce a *fixed* look that the video model
+then only has to move. Straight text-to-video re-rolls the look on every shot, and
+by shot six the grade has drifted. Cost matters too: a rejected keyframe is far
+cheaper to discard than a rejected clip.
 
 Trade-off: this forfeits the native multi-shot narrative generation that newer
-models offer. If you want a single model to handle a whole sequence, replace
+models offer. If you want one model to handle a whole sequence, replace
 `BaseVideoProvider` — the interface is two methods.
 
 ---
 
 ## OpenCV measurement instead of asking an LLM to describe the style
 
-`analyze.py` computes cut times, average shot length, saturation, contrast and
-warmth from pixels. The LLM is called once, only to *name* things that are
-genuinely linguistic (the grade, camera vocabulary, tone), and is explicitly told
-not to invent numbers.
+`media.probe_video` computes cut times, average shot length, saturation, contrast
+and warmth from pixels. The LLM is called once, only to *name* things that are
+genuinely linguistic (the grade, the camera vocabulary, the tone), and is told
+explicitly not to invent numbers.
 
 An LLM answering "fast cuts, punchy colour" is not reproducible. `avg_shot_sec =
 1.34` is, and it can be checked against the output in QC. The division is: pixels
 for anything measurable, language for anything nameable.
 
-**PySceneDetect** would have been the conventional choice for cut detection. It
-was not used because OpenCV was already a dependency for the colour statistics,
-and the same single decode pass yields cuts, colour stats and keyframes together.
-Adding a second library to re-decode the same file for one of those three would
-be worse.
+**PySceneDetect** would have been the conventional choice for cut detection. It was
+not used because OpenCV was already a dependency for the colour statistics, and the
+same single decode pass yields cuts, colour stats and keyframes together. Adding a
+second library to re-decode the same file for one of those three would be worse.
 
-**librosa** was rejected for BPM for the same reason: it is a heavy dependency
-for one number. BPM is instead estimated from the median cut interval, on the
-assumption that short-form edits cut on the beat. This is documented as a
-heuristic in the README's limitations, not presented as measurement.
+**librosa** was rejected for BPM for the same reason: a heavy dependency for one
+number. BPM is estimated from the median cut interval on the assumption that
+short-form edits cut on the beat. This is documented as a heuristic, not presented
+as measurement.
 
 ---
 
 ## Captions burned in ffmpeg, not generated by the video model
 
 Video models render text unreliably, inconsistently, and often in the wrong
-language. The caption spec in `style.json` (font, position, wrap width, stroke)
-must be byte-identical across every video for the set to look like one channel.
+language. The caption spec in `style.json` (font, position, wrap width, stroke) has
+to be byte-identical across every video for the set to look like one channel.
 `drawtext` guarantees that; a model does not.
 
-Caption text is passed via `textfile=` rather than inline, which sidesteps
-drawtext escaping entirely — Korean captions routinely contain colons, quotes and
-commas that would otherwise need escaping.
+Caption text is passed via `textfile=` rather than inline, which sidesteps drawtext
+escaping entirely — Korean captions routinely contain colons, quotes and commas
+that would each otherwise need escaping.
+
+Wrapping is by character count, not by word. Korean does not put spaces at
+predictable places, so a word wrapper leaves ragged lines.
 
 ---
 
-## FastAPI + BackgroundTasks, not Celery
+## CLI first, with the API as a peer rather than a port
 
-A render is one long HTTP-bound job with no fan-out, and its artifacts have to
-land on disk in a human-readable form regardless. A broker plus a worker plus a
-result backend would add three moving parts to serve a single-operator harness.
+The previous version of this project was API-first, with the pipeline orchestrated
+inside a FastAPI `BackgroundTasks` call. That made the transport a load-bearing
+part of the pipeline: there was no way to run a render without starting a server.
 
-The cost is honest and stated: restarting the server loses in-flight runs.
-`runner.execute` is a plain function, so moving it onto a queue later touches
-nothing else.
+Now `run_once` in `styleloom_core.runner` is the single entry point and the CLI is
+a thin caller. Progress is reported by emitting events rather than printing, so the
+same core drives a terminal, an SSE stream, or a queue consumer.
+
+The cost is one extra indirection (an `EventSink` instead of `print`). The benefit
+is that adding the API is additive. See [ARCHITECTURE.md](ARCHITECTURE.md).
+
+**Celery was rejected** for now. A render is one long HTTP-bound job with no
+fan-out, and its artifacts have to land on disk in human-readable form regardless.
+A broker plus a worker plus a result backend would add three moving parts to serve
+a single-operator harness. `worker/` is where that goes if durability becomes a
+requirement, and the handler is a few lines because `run_once` is already the unit
+of work.
+
+---
+
+## Static plan instead of an LLM planner
+
+Tools are registered with declared `reads` / `writes`, and a plan is an ordered
+tuple of tool names that gets validated before execution.
+
+An LLM planner was considered and rejected. The claim under test is that the *same*
+pipeline turns different inputs into videos that read as one channel. If a model
+reorders or drops stages between runs, output differences stop being attributable
+to the input, and the reproducibility claim collapses. Non-determinism belongs
+where it is a stated requirement — hook content — not in control flow.
+
+What the registry buys over a hardcoded call chain is that a misordered step fails
+at plan time with the missing artifact named, rather than at render time with a
+`KeyError` after money has been spent. What it does not buy, and does not pretend
+to, is dynamic tool selection.
 
 ---
 
@@ -95,8 +139,15 @@ nothing else.
 
 `data/runs/<run_id>/` *is* the deliverable. Every stage artifact is a JSON file
 someone can open and read. A database would hide exactly the intermediate state
-that makes the system inspectable, and would need an export step to produce what
-the filesystem already provides.
+that makes the system inspectable, and would then need an export step to produce
+what the filesystem already provides.
+
+One exception to "just files": archetype history is an append-only JSONL log per
+style (`data/styles/<id>/hook_history.jsonl`) rather than something derived by
+scanning runs. The previous implementation loaded and parsed every `run.json` on
+disk to find the last four archetypes, which is O(all runs) on every single run. A
+tail read of one small file is O(window), and the log is still a text file anyone
+can read.
 
 ---
 
@@ -107,20 +158,57 @@ implementation that requires no key and no network.
 
 This is not a testing convenience. The frontier video models turn over every few
 months — several of the current leaders did not exist a year ago. Hardcoding one
-means the harness has a shelf life. Keeping model choice in `.env` means someone
-else can point this at whatever is best when they read it.
+gives the harness a shelf life. Keeping model choice in settings means someone else
+can point this at whatever is best when they read it.
 
 The `mock` renderer is real ffmpeg output, not a stub: it produces a playable MP4
-with the correct shot count, durations and captions. That means the full pipeline
-— including QC — is verifiable by anyone who clones the repo, which matters more
-than the mock footage being pretty.
+with the correct shot count, durations and captions. The full pipeline — including
+QC — is therefore verifiable by anyone who clones the repo, which matters more than
+the mock footage being pretty.
 
-**fal.ai** was chosen for the one real integration because it fronts several
-video models behind one queue API, so a single implementation covers Seedance,
-Kling and others.
+**fal.ai** was chosen for the one real integration because it fronts several video
+models behind one queue API, so a single implementation covers Seedance, Kling and
+others. It also means changing model is an endpoint string, which is the property
+that makes the comparison below actionable rather than academic.
+
+### Which image-to-video endpoint, and why not the best one
+
+`styleloom models` prints this for any saved style. For a 30s video at short-form
+pacing (20 shots, ~1.5s each):
+
+| Endpoint | Floor | Elo | Per-shot, as built today | With `multi_prompt` |
+|---|---|---|---|---|
+| Seedance 2.0 | 4s | 1194 | **$24.27** (62% wasted) | not supported |
+| Kling v3 Pro | 3s | 1075 | **$6.72** (50% wasted) | **$3.36** (2 calls) |
+
+Seedance 2.0 is the better model and is not the default. Three reasons, in order
+of weight:
+
+1. **`multi_prompt`.** Kling v3 Pro accepts a list of `{prompt, duration}` shots in
+   one generation. That removes the duration floor entirely — a 1.2s cut bills 1.2s
+   instead of 3s — and is the only route to the reference's pacing without paying
+   for footage that gets trimmed off. Nothing else here offers it.
+2. **`elements`.** It is the only endpoint that takes a character reference, so the
+   creator cast per run stays the same person across cuts. Without it the
+   "creator" element of the assignment is prompt tokens and hope.
+3. **Rate.** $0.112/s against $0.3034/s, before the floor is even accounted for.
+
+The Elo gap is 119 points and real. For a single hero video where cost and creator
+consistency do not matter, `STYLELOOM_FAL_I2V_MODEL=bytedance/seedance-2.0/image-to-video`
+is one environment variable. What this system sells is repeatable output with a
+consistent presenter, and on those axes Kling wins.
+
+**Not added, and deliberately so.** Three endpoints look worth having and are absent
+from `configs/fal_models.yaml` because their parameter names were not read off the
+model page: `google/nano-banana-2` (holds one person's identity across generations
+without fine-tuning — the natural upgrade for the casting portrait),
+`alibaba/happy-horse` (native Korean lip-sync at $0.14/s, and it *outscores* Kling
+at Elo 1092), and `fal-ai/kling-video/o3/pro` (start+end frame, also multi_prompt).
+Guessing a parameter name is the exact failure this file exists to prevent — a wrong
+name is ignored silently. Each is one verified YAML entry away.
 
 It does *not* front them behind one schema, which was the surprise. Verified
-against the official model pages:
+against the official model pages (July 2026):
 
 | | Seedance 2.0 | Kling v3 Pro |
 |---|---|---|
@@ -131,46 +219,66 @@ against the official model pages:
 | concurrency | not documented | 1 per user |
 
 A single hardcoded payload would fail on at least one of these for every model
-except the one it was written against. Hence `configs/fal_models.yaml`: the
+except the one it was written against — and would fail silently, by sending a
+parameter name the endpoint ignores. Hence `configs/fal_models.yaml`: the
 differences are data, and adding a model is a data change. This is the one place
 the project deliberately buys configurability, because the alternative is not
-simpler code — it is code that silently sends the wrong parameter name.
+simpler code, it is code that quietly sends the wrong thing.
 
-The official `fal_client` SDK is used rather than hand-rolled HTTP. It owns the
-queue protocol and CDN upload; fal's own documentation discourages base64 data
-URIs above a few KB, and keyframes are hundreds of KB.
+Payload construction is separated from the network call
+(`build_animate_payload`), so the shapes above are unit-tested without a key.
+
+The official `fal_client` SDK is used rather than hand-rolled HTTP: it owns the
+queue protocol and CDN upload, and fal's own documentation discourages base64 data
+URIs above a few KB, while keyframes are hundreds of KB.
 
 ---
 
 ## The duration floor, and what it costs
 
 Every image-to-video endpoint has a minimum clip length — 4s on Seedance, 3s on
-Kling. Short-form shots run 1–2s. These are irreconcilable, so `render.py`
-requests the floor and trims the result with ffmpeg.
+Kling. Short-form shots run 1–2s. These are irreconcilable, so `render` requests
+the floor and trims the result with ffmpeg.
 
 This is the expensive decision in the project, and it was made deliberately:
 
-- An 11-shot video bills 11 × 4s ≈ **$10.64** on Seedance fast, plus keyframes,
-  for roughly **9 seconds of usable footage**. About 80% is discarded.
-- The alternative — stretching shots to the 4s floor — would destroy pacing,
-  which is the single most characteristic property of a short-form style and the
-  thing `style.json` exists to reproduce. A system that cannot hold a 1.2s cut
-  cannot replicate the reference at all.
+- An 11-shot video bills 11 × 4s ≈ **$10.64** on Seedance fast, plus keyframes, for
+  roughly **9 seconds of usable footage**. About 80% is discarded.
+- The alternative — stretching shots to the 4s floor — would destroy pacing, which
+  is the single most characteristic property of a short-form style and the thing
+  `style.json` exists to reproduce. A system that cannot hold a 1.2s cut cannot
+  replicate the reference at all.
 
 So the money is spent on the requirement rather than saved by abandoning it.
 
 The real fix is batching: Kling's `multi_prompt` takes a list of shots with
 individual durations in one generation, and Seedance cuts between shots natively
-within a single 15s output. Either would collapse many calls into one and cut
-cost several-fold. Not implemented — it changes the render/assembly boundary
+within a single 15s output. Either would collapse many calls into one and cut cost
+several-fold. Not implemented — it moves the render/assembly boundary
 significantly, and doing it badly would trade a known cost for unpredictable
 pacing.
+
+Trimming re-encodes rather than stream-copying, so the cut lands on the requested
+frame instead of the nearest keyframe. Frame accuracy here is load-bearing for the
+same reason as above.
 
 ---
 
 ## Anthropic for the LLM
 
-Vision-capable, which `analyze.py` uses to send reference keyframes alongside the
-measured statistics, and reliable at returning parseable JSON under an explicit
-schema instruction. `_extract_json` still handles fenced output and stray prose
+Claude Sonnet 5. Vision-capable, which `tools/analyze.py` uses to send reference keyframes alongside
+the measured statistics, and reliable at returning parseable JSON under an explicit
+schema instruction. `extract_json` still handles fenced output and stray prose
 defensively, because "return only JSON" is a request, not a guarantee.
+
+---
+
+## Typer for the CLI
+
+Type hints become the argument parser, so the command signature and the validation
+are the same declaration. The alternative was argparse, which would have meant
+writing the parsing twice — once as types for the reader and once as
+`add_argument` calls for the machine.
+
+Typer lives in `styleloom-cli`'s dependencies and nowhere near the core. That is
+checked by a test, not by convention.

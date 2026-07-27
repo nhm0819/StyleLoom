@@ -1,0 +1,87 @@
+# Casting pools: who is on screen, and where.
+#
+# The assignment lists creator (person) and background as elements that should
+# differ between outputs, alongside the hook. They are sampled with the same
+# machinery as hook archetypes -- weighted draw plus a recency penalty read from
+# this style's history -- so three videos from one style get three different
+# on-screen presenters and locations rather than the same footage with new text.
+#
+# `weight` is the base sampling probability. Edit this file to retarget the system
+# to a different channel; no code change is required. Point
+# STYLELOOM_CASTING_PATH at your own file to avoid touching the repo at all.
+#
+# `prompt` is injected verbatim into every shot's image prompt. Write it as a
+# comma-separated visual description, not a sentence -- image models weight
+# comma-separated tokens more evenly than prose.
+
+creators:
+  - id: young_woman_casual
+    weight: 1.0
+    label: 20대 여성 · 편안한 홈웨어
+    prompt: >-
+      a Korean woman in her mid-20s, natural bare-faced makeup, soft shoulder-length
+      hair, oversized cream cotton sweatshirt, warm and approachable expression
+
+  - id: young_woman_polished
+    weight: 1.0
+    label: 20대 여성 · 단정한 오피스룩
+    prompt: >-
+      a Korean woman in her late 20s, clean glowy makeup, hair tied back neatly,
+      tailored beige blazer over a white top, composed and confident expression
+
+  - id: young_man_casual
+    weight: 0.8
+    label: 20대 남성 · 캐주얼
+    prompt: >-
+      a Korean man in his mid-20s, clear skin, short tidy dark hair, plain grey
+      crewneck sweatshirt, relaxed friendly expression
+
+  - id: woman_30s_editorial
+    weight: 0.9
+    label: 30대 여성 · 에디토리얼
+    prompt: >-
+      a Korean woman in her early 30s, refined minimal makeup, sleek dark hair,
+      structured black knit top, calm assured expression
+
+  - id: hands_only
+    weight: 0.6
+    label: 손만 등장 (얼굴 노출 없음)
+    prompt: >-
+      close framing on a pair of well-groomed hands with short natural nails, no
+      face visible, neutral long sleeves
+
+settings:
+  - id: bright_bathroom
+    weight: 1.0
+    label: 밝은 욕실 세면대
+    prompt: >-
+      a bright modern bathroom vanity, white tile, large mirror, soft daylight from
+      a frosted window, minimal clutter
+
+  - id: bedroom_vanity
+    weight: 1.0
+    label: 침실 화장대
+    prompt: >-
+      a cozy bedroom vanity corner, warm lamp light, linen bedding visible behind,
+      a few skincare bottles arranged neatly
+
+  - id: sunlit_kitchen
+    weight: 0.8
+    label: 햇살 드는 주방
+    prompt: >-
+      a sunlit kitchen counter, pale wood surfaces, a glass of water and a small
+      plant, bright natural light
+
+  - id: studio_seamless
+    weight: 0.9
+    label: 무배경 스튜디오
+    prompt: >-
+      a seamless studio backdrop in soft pastel, even diffused lighting, no props,
+      product-forward framing
+
+  - id: cafe_window
+    weight: 0.7
+    label: 카페 창가
+    prompt: >-
+      a cafe seat beside a large window, blurred street greenery outside, warm
+      afternoon light, wooden table

@@ -7,6 +7,9 @@ venv/
 build/
 dist/
 .pytest_cache/
+.ruff_cache/
+uv.lock
+
 # Ignore run artifacts but keep the directory layout. Git cannot re-include a
 # file whose parent directory is excluded, hence the `dir/*` form.
 data/runs/*
