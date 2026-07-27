@@ -33,6 +33,70 @@ ffmpeg-only renderer, so the whole pipeline runs end to end on a fresh clone. Se
 
 ---
 
+## Docker
+
+```bash
+docker build -t styleloom .
+docker run --rm styleloom doctor
+```
+
+`ENTRYPOINT` is the CLI, so arguments go straight through and read as the command
+they wrap:
+
+```bash
+docker run --rm \
+  -v "$PWD/.env:/app/.env:ro" \
+  -v "$PWD/data:/app/data" \
+  styleloom run my_style --text "이 제품 소개해줘"
+```
+
+**`.env` is a bind mount, not `--env-file`.** `Settings` declares
+`env_file=".env"` and reads it relative to the process cwd, which the image fixes
+at `/app` — so mounting the file lets pydantic-settings parse it, comments and all,
+exactly as it does outside a container. `--env-file` also works but hands the file
+to Docker's parser instead, which has different quoting rules. Real environment
+variables take precedence over the file either way, so `-e ANTHROPIC_API_KEY` still
+overrides:
+
+```bash
+docker run --rm -e ANTHROPIC_API_KEY -e FAL_KEY \
+  -v "$PWD/data:/app/data" \
+  styleloom run my_style --text "..."
+```
+
+**Mount `data/` or the output is lost.** Runs, styles and the choice history all
+live under `data/`, inside the container, and `--rm` deletes them with it. The
+mount is also how `style extract` finds reference videos — put them somewhere
+mounted and pass the container-side path:
+
+```bash
+docker run --rm -v "$PWD/data:/app/data" styleloom \
+  style extract my_style data/uploads/reference1.mp4
+```
+
+Three things the image settles on purpose:
+
+- **`WORKDIR /app` is load-bearing.** `data_dir` defaults to the relative
+  `Path("data")` and `env_file` to `.env`, both resolved against cwd. Any other
+  working directory writes runs elsewhere and stops reading `.env`, neither with an
+  error.
+- **The install is editable.** `config.py` derives `REPO_ROOT` from
+  `Path(__file__).resolve().parents[2]`, which `resolve_config()` uses to fall back
+  to the bundled `configs/*.yaml`. Under a regular site-packages install that
+  expression lands on `/usr/local/lib/python3.12` and the fallback breaks;
+  editable keeps it at `/app`.
+- **It runs as UID 1000, not root**, so bind-mounted output is not root-owned on
+  the host. If your UID differs, pass `--user "$(id -u):$(id -g)"`.
+
+Two apt packages and no more: `ffmpeg`, which every render and probe shells out to,
+and `fonts-noto-cjk`, without which `drawtext` renders Korean captions as empty
+boxes and reports no error. `opencv-python-headless` needs nothing beyond what
+`slim` already ships — which is why the dependency is pinned to the headless wheel
+rather than `opencv-python`, whose libGL, libX11 and Qt5 requirements would all
+have to be installed here.
+
+---
+
 ## Walkthrough
 
 ### 1. Extract a style from reference videos
