@@ -445,6 +445,41 @@ Regression tests exist for bugs found during development:
 
 ---
 
+## Debugging
+
+`.vscode/launch.json` has separate targets for the two distributions.
+
+| Config | Target |
+|---|---|
+| `cli: doctor` | Environment check. No I/O, no keys — run it first if the debugger wiring itself looks wrong |
+| `cli: run (offline, sample style)` | The full pipeline against `mock` providers |
+| `cli: hook preview (offline)` | Hook sampling only, sub-second. The breakpoint target for `tools/hook.py` |
+| `cli: pytest (cli/tests)` | CLI tests |
+| `core: pytest (current file)` | Whichever test file is focused |
+| `core: pytest (agent-core/tests)` | Core tests |
+| `core: current file (scratch driver)` | A scratch `.py` that imports `styleloom_core` directly |
+
+`agent-core` has no entry point — it is a library, so its debug targets are tests
+and a scratch driver rather than a `main`.
+
+Two things every config sets deliberately:
+
+- **`cwd` is pinned to the workspace root.** `data_dir` defaults to the relative
+  `Path("data")` with no repo-root fallback, so launching from anywhere else reads
+  and writes a different `data/` without saying so. `configs/*.yaml` are safe either
+  way — `resolve_config()` falls back to `REPO_ROOT`.
+- **`args` is a literal array, not a `${input:...}` prompt.** VS Code does not split
+  a `promptString` into argv, so a prompted `run my_style --text hello` arrives as
+  one single argument and the CLI rejects it. Copy a config and edit its `args`.
+
+`cli: run` needs the style installed once:
+
+```bash
+styleloom style set biodance_asmr_montage samples/styles/biodance_asmr_montage/style.json
+```
+
+---
+
 ## Import errors
 
 `ModuleNotFoundError: No module named 'styleloom_core'` after the install reported

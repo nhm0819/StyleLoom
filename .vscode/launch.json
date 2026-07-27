@@ -1,0 +1,114 @@
+{
+  // Debug targets for the two distributions. Every config pins
+  // "cwd": "${workspaceFolder}" on purpose: Settings.data_dir defaults to the
+  // relative Path("data") with no repo-root fallback, so launching from
+  // anywhere else silently reads and writes the wrong data/ directory.
+  // (configs/*.yaml are safe either way -- resolve_config() falls back to
+  // REPO_ROOT.)
+  //
+  // "args" is a literal array rather than a ${input:...} prompt: VS Code does
+  // not split a promptString into argv, so a prompted "run my_style --text x"
+  // arrives as one single argument. Copy a config and edit its args instead.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Start here if the debugger itself seems misconfigured. No I/O, no keys.
+      "name": "cli: doctor",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "styleloom_cli.main",
+      "args": ["doctor"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      // Full pipeline, offline. --llm/--video mock keep it keyless and free.
+      // Needs the style installed once:
+      //   styleloom style set biodance_asmr_montage \
+      //     samples/styles/biodance_asmr_montage/style.json
+      "name": "cli: run (offline, sample style)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "styleloom_cli.main",
+      "args": [
+        "run",
+        "biodance_asmr_montage",
+        "--text",
+        "이 제품 소개해줘",
+        "--llm",
+        "mock",
+        "--video",
+        "mock"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      // Sub-second round trip into the hook sampling -- the useful breakpoint
+      // target in tools/hook.py. Skips ingest, render and assemble entirely.
+      "name": "cli: hook preview (offline)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "styleloom_cli.main",
+      "args": [
+        "hook",
+        "preview",
+        "biodance_asmr_montage",
+        "--text",
+        "이 제품 소개해줘",
+        "-n",
+        "5",
+        "--llm",
+        "mock"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "cli: pytest (cli/tests)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["cli/tests", "-q"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      // agent-core has no entry point of its own -- it is a library, so its
+      // debug target is a test. This one runs whichever test file is focused.
+      "name": "core: pytest (current file)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-q", "-s"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "core: pytest (agent-core/tests)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["agent-core/tests", "-q"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      // For a scratch file that imports styleloom_core and drives it directly,
+      // without going through the CLI.
+      "name": "core: current file (scratch driver)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}
