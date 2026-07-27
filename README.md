@@ -500,6 +500,46 @@ the repo root is not the fix and will fail: the root `pyproject.toml` is a uv
 workspace with no `[project]` table, deliberately, because the installable
 distributions are `agent-core` and `cli`.
 
+### Pylance reports the import as missing but it runs fine
+
+A different problem with the same message. `python -c "import styleloom_core"`
+succeeds, and VS Code still underlines the import with
+`reportMissingImports`.
+
+Setuptools implements PEP 660 with an import hook. The `.pth` file it drops in
+`site-packages` holds an executable statement, not a path:
+
+```
+import __editable___styleloom_core_0_2_0_finder; __editable___styleloom_core_0_2_0_finder.install()
+```
+
+The package-to-directory mapping lives inside that finder module. Pylance reads
+`.pth` files but does not execute them, so at runtime the mapping is applied and to
+static analysis it does not exist. Nothing is misconfigured — a language server
+cannot see through an import hook.
+
+`.vscode/settings.json` in this repo restates the mapping in a form Pylance reads:
+
+```json
+{ "python.analysis.extraPaths": ["agent-core", "cli"] }
+```
+
+Reload the window after checking it out. Also confirm the selected interpreter is
+the venv (**Python: Select Interpreter** → the `.venv` entry); `extraPaths` fixes
+the first-party imports, the interpreter is what supplies pydantic and typer.
+
+Two alternatives, neither needed if the above works:
+
+- `pyrightconfig.json` with the same `extraPaths`. Portable across editors and
+  picked up by the `pyright` CLI, but when that file exists Pylance ignores every
+  `python.analysis.*` setting, including `typeCheckingMode` — on this repo that
+  means inheriting pyright's stricter default and seeing roughly 100 pre-existing
+  type errors that Pylance was not reporting before.
+- `python -m pip install -e agent-core -e cli --config-settings editable_mode=compat`,
+  which makes setuptools write a plain directory path into the `.pth` instead of an
+  import hook. Static analysis then resolves with no editor config at all. It is a
+  per-machine install flag that is easy to forget on the next clone.
+
 ---
 
 ## Known limitations
