@@ -1,0 +1,74 @@
+{
+  "style_id": "biodance_ugc_talkinghead",
+  "created_at": "2026-07-27T09:55:50+00:00",
+  "source_refs": [
+    "사전과제_reference2.mp4"
+  ],
+  "total_duration": 12.13,
+  "beat_pattern": [
+    "hook",
+    "context",
+    "payoff"
+  ],
+  "pacing": {
+    "avg_shot_sec": 4.044,
+    "shot_count": 3,
+    "cut_style": "sustained_take_with_end_card",
+    "cut_times": [
+      3.933,
+      8.133
+    ]
+  },
+  "camera": {
+    "shot_size_dist": {
+      "CU": 0.7,
+      "MS": 0.2,
+      "ECU": 0.1
+    },
+    "moves": [
+      "handheld_selfie_arm",
+      "static_phone_mount",
+      "slow_reframe"
+    ]
+  },
+  "look": {
+    "grade": "warm_natural_selfie_light",
+    "saturation": 0.38,
+    "contrast": 0.384,
+    "warmth": 0.524,
+    "keywords": [
+      "single presenter, direct to camera",
+      "close-up face fills frame",
+      "unretouched skin texture",
+      "soft indoor daylight",
+      "phone front camera look",
+      "product held up to lens at the end",
+      "centred subtitles"
+    ]
+  },
+  "caption": {
+    "font": "bold_sans",
+    "pos": "center",
+    "anim": "pop_in",
+    "max_chars_per_line": 16,
+    "color": "white",
+    "stroke_color": "black",
+    "appear_on_beat": true
+  },
+  "audio": {
+    "bpm": 114.3,
+    "sfx_on_cut": true,
+    "voice_tone": "calm_confessional_direct_address"
+  },
+  "hook_style": {
+    "window_sec": 3.0,
+    "shot_size": "CU",
+    "cut_count": 1,
+    "text_patterns": [
+      "question",
+      "empathy",
+      "contradiction"
+    ]
+  },
+  "notes": "한 사람이 카메라를 보고 말하는 UGC 리뷰. 12.13초에 컷이 2개뿐이고 첫 3초에는 없다. 얼굴이 샘플 프레임의 57%에서 검출되며 화면 면적의 28%를 차지해 클로즈업 토킹헤드로 판정했다. 8.2초의 컷은 히스토그램 거리 0.994로 사실상 전체 화면 교체 -- 얼굴 검출이 여기서 끊기므로 제품 엔드카드로 본다."
+}

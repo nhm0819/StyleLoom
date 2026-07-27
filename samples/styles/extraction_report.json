@@ -1,0 +1,132 @@
+{
+  "biodance_asmr_montage": {
+    "ref": "사전과제_reference1.mp4",
+    "llm_calls": [
+      "style_synthesis images=6"
+    ],
+    "measured": {
+      "total_duration": 10.7,
+      "avg_shot_sec": 0.764,
+      "shot_count": 14,
+      "saturation": 0.348,
+      "contrast": 0.442,
+      "warmth": 0.579,
+      "bpm": 128.8,
+      "hook_cut_count": 5,
+      "n_cut_times": 13
+    },
+    "edits": [
+      {
+        "field": "camera.shot_size_dist",
+        "to": {
+          "ECU": 0.35,
+          "CU": 0.35,
+          "MS": 0.25,
+          "WS": 0.05
+        },
+        "why": "얼굴 검출률 5%, 검출 시 면적비 0.049. 인물 클로즈업이 아니라 제품 매크로가 화면을 지배하므로 ECU/CU에 가중."
+      },
+      {
+        "field": "caption.pos",
+        "to": "center_lower",
+        "why": "밝고 경사 강한 픽셀 밀도가 세로 7번째 십분위(70~80%)에서 최대. drawtext 기준 bottom(h*0.82)보다 center_lower(h*0.62)가 근접."
+      },
+      {
+        "field": "caption.max_chars_per_line",
+        "to": 12,
+        "why": "컷 평균 0.764초. 한 컷에 읽을 수 있는 분량이 짧다."
+      },
+      {
+        "field": "caption.anim",
+        "to": "pop_in",
+        "why": "컷마다 자막이 교체되는 리듬. burn_captions는 pop_in에만 0.12초 페이드를 적용."
+      },
+      {
+        "field": "beat_pattern",
+        "to": [
+          "hook",
+          "apply",
+          "reveal",
+          "cta"
+        ],
+        "why": "기본 5비트로는 storyboard가 17샷을 만들지만 측정된 shot_count는 14. 본문 3비트로 줄이면 5(훅)+9(본문)=14로 측정치와 정확히 일치한다. 비트 이름도 관찰된 구조(제품 도포 -> 질감 리빙 -> 엔드카드)에 맞췄다."
+      },
+      {
+        "field": "hook_style.shot_size",
+        "to": "ECU",
+        "why": "오프닝이 제품 매크로. 인물 클로즈업이 아님."
+      },
+      {
+        "field": "hook_style.text_patterns",
+        "to": [
+          "visual_impact",
+          "reversal"
+        ],
+        "why": "보이스오버가 없어 첫 프레임의 시각적 충격이 훅을 담당. configs/archetypes.yaml의 실제 id 사용."
+      }
+    ],
+    "path": "/home/claude/out/biodance_asmr_montage/style.json"
+  },
+  "biodance_ugc_talkinghead": {
+    "ref": "사전과제_reference2.mp4",
+    "llm_calls": [
+      "style_synthesis images=2"
+    ],
+    "measured": {
+      "total_duration": 12.13,
+      "avg_shot_sec": 4.044,
+      "shot_count": 3,
+      "saturation": 0.38,
+      "contrast": 0.384,
+      "warmth": 0.524,
+      "bpm": 114.3,
+      "hook_cut_count": 1,
+      "n_cut_times": 2
+    },
+    "edits": [
+      {
+        "field": "camera.shot_size_dist",
+        "to": {
+          "CU": 0.7,
+          "MS": 0.2,
+          "ECU": 0.1
+        },
+        "why": "얼굴 면적비 중앙값 0.28이 8.1초까지 유지. 사실상 단일 클로즈업."
+      },
+      {
+        "field": "caption.pos",
+        "to": "center",
+        "why": "자막 후보 픽셀 밀도가 세로 5~6번째 십분위(40~60%)에서 최대. center((h-text_h)/2)가 유일하게 맞는 값."
+      },
+      {
+        "field": "caption.max_chars_per_line",
+        "to": 16,
+        "why": "컷 평균 4.04초. 한 컷이 길어 문장을 더 실을 수 있다."
+      },
+      {
+        "field": "beat_pattern",
+        "to": [
+          "hook",
+          "context",
+          "payoff"
+        ],
+        "why": "기본 5비트로는 storyboard가 5샷을 만들지만 측정된 shot_count는 3. 3비트로 줄이면 1(훅)+2(본문)=3으로 측정치와 일치."
+      },
+      {
+        "field": "hook_style.shot_size",
+        "to": "CU",
+        "why": "오프닝부터 얼굴 면적비 0.26. 클로즈업으로 시작."
+      },
+      {
+        "field": "hook_style.text_patterns",
+        "to": [
+          "question",
+          "empathy",
+          "contradiction"
+        ],
+        "why": "직접 화법 리뷰의 오프닝. 시각적 충격이 아니라 말로 붙잡는 구조."
+      }
+    ],
+    "path": "/home/claude/out/biodance_ugc_talkinghead/style.json"
+  }
+}
