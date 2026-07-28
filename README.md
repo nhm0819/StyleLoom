@@ -111,13 +111,18 @@ docker run --rm -e ANTHROPIC_API_KEY -e FAL_KEY \
 
 **Mount `data/` or the output is lost.** Runs, styles and the choice history all
 live under `data/`, inside the container, and `--rm` deletes them with it. The
-mount is also how `style extract` finds reference videos — put them somewhere
-mounted and pass the container-side path:
+mount is also how `style extract` finds reference videos — put them in
+`data/uploads/` on the host and pass the filename, which resolves to the mounted
+copy inside the container:
 
 ```bash
+cp reference1.mp4 data/uploads/
 docker run --rm -v "$PWD/data:/app/data" styleloom \
-  style extract my_style data/uploads/reference1.mp4
+  style extract my_style reference1.mp4
 ```
+
+Anything outside the mount is invisible to the container, so a host path that the
+same command resolves fine outside Docker will not be found here.
 
 Three things the image settles on purpose:
 
@@ -146,8 +151,19 @@ have to be installed here.
 
 ### 1. Extract a style from reference videos
 
+Drop the references in `data/uploads/` and pass the filenames:
+
 ```bash
-styleloom style extract my_style refs/ref01.mp4 refs/ref02.mp4
+cp ~/Downloads/ref01.mp4 ~/Downloads/ref02.mp4 data/uploads/
+styleloom style extract my_style ref01.mp4 ref02.mp4
+```
+
+Each argument is looked up in `<data-dir>/uploads/` first, and used as a path when
+it is not there — so an absolute path or one relative to the working directory
+keeps working, and the two forms can be mixed in one command:
+
+```bash
+styleloom style extract my_style ref01.mp4 /Volumes/footage/ref02.mp4
 ```
 
 Writes `data/styles/my_style/style.json`. Pacing, colour and the hook window are
@@ -174,12 +190,20 @@ styleloom batch my_style \
 Each run prints its stages, the hook it generated, its QC score and the path to
 `final.mp4`. The batch then reports how much variety it achieved.
 
-One input at a time, with an image or a video instead of text:
+One input at a time, with an image or a video instead of text. `--file`, `--bgm`
+and `--persona` take the same lookup as a reference video — `<data-dir>/uploads/`
+first, then the path as given:
 
 ```bash
+cp product.jpg clip.mp4 data/uploads/
 styleloom run my_style --file product.jpg --text "이 제품 소개해줘"
 styleloom run my_style --file clip.mp4
+styleloom run my_style --file /abs/path/clip.mp4        # still fine
 ```
+
+All three are checked before the run directory is created, so a typo in `--bgm`
+fails immediately instead of after the renders have been paid for. `inputs.json`
+records the resolved path, not the argument.
 
 ### 3. Prove the hook is not frozen
 
@@ -231,12 +255,12 @@ bundle/
 
 | Command | What it does |
 |---|---|
-| `styleloom style extract <id> <refs...>` | Reference videos → `style.json`. `--force` to overwrite |
+| `styleloom style extract <id> <refs...>` | Reference videos → `style.json`. Refs resolve against `<data-dir>/uploads/` first, then as given. `--force` to overwrite |
 | `styleloom style ls` | Saved styles, with each one's recent hook archetypes |
 | `styleloom style show <id>` | Print `style.json` |
 | `styleloom style set <id> <file>` | Replace it with a hand-edited copy (validated) |
 | `styleloom style history <id>` | Recent hook / creator / setting choices. `--kind` to filter |
-| `styleloom run <id>` | One input → one video. `--text`, `--file`, `--bgm`, `--persona`, `--lang` |
+| `styleloom run <id>` | One input → one video. `--text`, `--file`, `--bgm`, `--persona`, `--lang`. File options resolve against `<data-dir>/uploads/` first, then as given |
 | `styleloom batch <id>` | Several inputs through one system. Repeat `-t` / `-f`, or `--inputs-file` |
 | `styleloom runs ls` | Recent runs, status, hook, QC score. `--style` to filter |
 | `styleloom runs show <run_id>` | The run record |
@@ -450,7 +474,10 @@ event sink — which is what makes them additive rather than a rewrite.
 
 Nothing about a specific reference video is in the code:
 
-1. `styleloom style extract <id> your/refs/*.mp4` → a new `style.json`.
+1. Put your references in `data/uploads/`, then
+   `styleloom style extract <id> ref01.mp4 ref02.mp4` → a new `style.json`.
+   Paths from anywhere else work too; the uploads directory is only the default
+   lookup.
 2. Edit `configs/archetypes.yaml` and `configs/casting.yaml`, or point
    `STYLELOOM_ARCHETYPES_PATH` / `STYLELOOM_CASTING_PATH` at your own files. The
    bundled casting pools are written for a beauty/skincare channel; a different

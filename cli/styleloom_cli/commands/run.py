@@ -41,10 +41,12 @@ def run(
     style_id: Annotated[str, typer.Argument(help="사용할 스타일 ID")],
     text: Annotated[str, typer.Option("--text", "-t", help="텍스트 입력")] = "",
     file: Annotated[Path | None, typer.Option("--file", "-f",
-                    help="이미지 또는 영상 입력")] = None,
-    bgm: Annotated[Path | None, typer.Option(help="배경음악")] = None,
+                    help="이미지 또는 영상 입력. 파일명만 주면 "
+                         "<data-dir>/uploads/ 에서 찾습니다")] = None,
+    bgm: Annotated[Path | None, typer.Option(help="배경음악 (uploads/ 조회 동일)")] = None,
     persona: Annotated[Path | None, typer.Option(
-        help="크리에이터 참조 이미지 (Kling v3 계열에서만 반영)")] = None,
+        help="크리에이터 참조 이미지 (Kling v3 계열에서만 반영, "
+             "uploads/ 조회 동일)")] = None,
     lang: Annotated[str, typer.Option(help="출력 언어")] = "ko",
     no_qc: Annotated[bool, typer.Option("--no-qc", help="정합성 검사 생략")] = False,
     data_dir: Annotated[Path | None, typer.Option("--data-dir")] = None,
@@ -79,7 +81,8 @@ def batch(
     text: Annotated[list[str] | None, typer.Option("--text", "-t",
                     help="텍스트 입력 (여러 번 반복 가능)")] = None,
     file: Annotated[list[Path] | None, typer.Option("--file", "-f",
-                    help="파일 입력 (여러 번 반복 가능)")] = None,
+                    help="파일 입력 (여러 번 반복 가능). 파일명만 주면 "
+                         "<data-dir>/uploads/ 에서 찾습니다")] = None,
     inputs_file: Annotated[Path | None, typer.Option("--inputs-file",
                            help="한 줄에 하나씩 입력이 적힌 텍스트 파일")] = None,
     lang: Annotated[str, typer.Option(help="출력 언어")] = "ko",

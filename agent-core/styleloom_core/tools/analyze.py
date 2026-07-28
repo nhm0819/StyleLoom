@@ -66,11 +66,18 @@ def extract_style(
 ) -> StyleSchema:
     if not ref_paths:
         raise ToolError("at least one reference video is required")
-    missing = [p for p in ref_paths if not p.exists()]
-    if missing:
-        raise ToolError(f"reference not found: {', '.join(str(p) for p in missing)}")
 
-    per_video = [probe_video(p) for p in ref_paths]
+    resolved = [(p, ctx.settings.resolve_ref(p)) for p in ref_paths]
+    missing = [given for given, found in resolved if found is None]
+    if missing:
+        tried = [
+            f"{given} (tried {', '.join(str(c) for c in ctx.settings.ref_candidates(given))})"
+            for given in missing
+        ]
+        raise ToolError("reference not found: " + "; ".join(tried))
+    found_paths = [found for _, found in resolved if found is not None]
+
+    per_video = [probe_video(p) for p in found_paths]
     keyframes = [kf for m in per_video for kf in m["keyframes"]][:MAX_KEYFRAMES_TO_LLM]
     m = merge_metrics(per_video)
 
@@ -95,7 +102,7 @@ def extract_style(
 
     return StyleSchema(
         style_id=style_id,
-        source_refs=[p.name for p in ref_paths],
+        source_refs=[p.name for p in found_paths],
         total_duration=m["duration"],
         pacing=Pacing(
             avg_shot_sec=max(m["avg_shot_sec"], 0.3),

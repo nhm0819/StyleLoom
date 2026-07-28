@@ -4,7 +4,10 @@ different videos that still conform to the same style.
 
 from __future__ import annotations
 
+import json
+import shutil
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from styleloom_core import RunInputs, RunStatus, build_plan, run_batch, run_once
@@ -164,3 +167,38 @@ def test_batch_continues_past_a_failed_input(ctx, style, monkeypatch):
     statuses = [r.status for r in records]
     assert statuses.count(RunStatus.DONE) == 2
     assert statuses[1] is RunStatus.FAILED
+
+
+def test_input_file_resolves_against_the_uploads_dir(ctx, style, reference_video):
+    """`run -f clip.mp4` finds `data/uploads/clip.mp4`, same rule as a reference."""
+    ctx.settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(reference_video, ctx.settings.uploads_dir / "clip.mp4")
+
+    record = run_once(ctx, style.style_id, RunInputs(file_path=Path("clip.mp4")))
+    assert record.status is RunStatus.DONE, record.error
+
+    saved = json.loads(
+        (ctx.runs.dir_for(record.run_id) / "inputs.json").read_text(encoding="utf-8")
+    )
+    # The run records the file it read, not the argument it was handed.
+    assert saved["file_path"] == str(ctx.settings.uploads_dir / "clip.mp4")
+
+
+def test_input_file_outside_the_uploads_dir_still_works(ctx, style, reference_video):
+    record = run_once(ctx, style.style_id, RunInputs(file_path=reference_video))
+    assert record.status is RunStatus.DONE, record.error
+
+
+def test_a_missing_input_file_fails_before_a_run_is_created(ctx, style):
+    """Not mid-render: by then a paid provider has already been billed."""
+    before = len(ctx.runs.list_records())
+    with pytest.raises(NotFoundError, match="file_path"):
+        run_once(ctx, style.style_id, RunInputs(file_path=Path("nope.mp4")))
+    assert len(ctx.runs.list_records()) == before
+
+
+def test_a_missing_bgm_is_caught_at_the_same_point_as_the_input(ctx, style):
+    """bgm is opened by assemble, minutes after render. Checking it there means
+    paying for the renders first."""
+    with pytest.raises(NotFoundError, match="bgm"):
+        run_once(ctx, style.style_id, RunInputs(text=INPUTS[0], bgm=Path("nope.mp3")))

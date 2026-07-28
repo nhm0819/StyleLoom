@@ -11,9 +11,12 @@ the core stays silent and each transport renders progress its own way.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..config import Settings
 from ..context import Context, new_run_id
+from ..errors import NotFoundError
 from ..events import EventKind
 from ..planner import Plan, build_plan
 from ..schema import AssembleResult, RunInputs, RunRecord, RunStatus
@@ -22,6 +25,40 @@ from ..tools import registry
 
 if TYPE_CHECKING:
     from ..schema import StyleSchema
+
+# Every caller-supplied file on RunInputs. All three get the same lookup as a
+# reference video: one rule for "a path the user typed", not one per option.
+INPUT_ASSET_FIELDS = ("file_path", "bgm", "persona_ref")
+
+
+def resolve_inputs(settings: Settings, inputs: RunInputs) -> RunInputs:
+    """Point every asset path at a file that exists, or say which ones do not.
+
+    Checked here rather than where each asset is first opened, because those
+    points are spread across ingest, render and assemble -- a missing bgm would
+    otherwise surface as a failure several minutes into a paid run, after the
+    renders had already been billed. This is the last place before any work
+    starts that still sees all three together.
+
+    The resolved paths are what `prepare_session` snapshots into `inputs.json`,
+    so a run records the file it actually read rather than the argument it was
+    handed.
+    """
+    updates: dict[str, Path] = {}
+    missing: list[str] = []
+    for field in INPUT_ASSET_FIELDS:
+        given: Path | None = getattr(inputs, field)
+        if given is None:
+            continue
+        found = settings.resolve_ref(given)
+        if found is None:
+            tried = ", ".join(str(c) for c in settings.ref_candidates(given))
+            missing.append(f"{field}={given} (tried {tried})")
+        elif found != given:
+            updates[field] = found
+    if missing:
+        raise NotFoundError("input file not found: " + "; ".join(missing))
+    return inputs.model_copy(update=updates) if updates else inputs
 
 
 def prepare_session(
@@ -36,6 +73,7 @@ def prepare_session(
     run, not something the run produces. It is snapshotted into the run folder so
     a later hand-edit of style.json cannot silently change what a past run meant.
     """
+    inputs = resolve_inputs(ctx.settings, inputs)
     style: StyleSchema = ctx.styles.load(style_id)  # raises NotFoundError
     record = RunRecord(run_id=run_id or new_run_id(), style_id=style_id)
     ctx.runs.save(record)

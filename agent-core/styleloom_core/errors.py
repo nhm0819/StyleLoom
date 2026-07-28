@@ -17,7 +17,7 @@ class ConfigError(StyleLoomError):
 
 
 class NotFoundError(StyleLoomError):
-    """A style or run was requested that does not exist on disk."""
+    """A style, run or input file was requested that does not exist on disk."""
 
 
 class ProviderError(StyleLoomError):

@@ -145,6 +145,36 @@ class Settings(BaseSettings):
     def uploads_dir(self) -> Path:
         return self.data_dir / "uploads"
 
+    def ref_candidates(self, path: Path) -> list[Path]:
+        """Where a reference video argument could live, in priority order.
+
+        `uploads_dir` first so a bare filename works from any working directory --
+        `data/uploads/` is the place references are meant to sit, and typing the
+        full path to it every time is the friction this removes.
+
+        The second candidate is the argument untouched, which is what makes an
+        absolute path and a path relative to cwd keep working. Both are covered by
+        the same two probes with no branch on the shape of the argument: joining an
+        absolute path onto `uploads_dir` yields the absolute path itself, so for
+        `/tmp/ref.mp4` the two candidates collapse to one.
+
+        Deduplicated because the caller puts these in an error message, and
+        "tried /tmp/ref.mp4, /tmp/ref.mp4" reads like a bug.
+        """
+        found: list[Path] = []
+        for candidate in (self.uploads_dir / path, path):
+            if candidate not in found:
+                found.append(candidate)
+        return found
+
+    def resolve_ref(self, path: Path) -> Path | None:
+        """First existing candidate, or None. Callers own the error message.
+
+        Returns rather than raises because `extract_style` reports every missing
+        reference at once -- raising here would surface them one run at a time.
+        """
+        return next((c for c in self.ref_candidates(path) if c.is_file()), None)
+
     def resolve_config(self, path: Path) -> Path:
         """Config files fall back to the ones bundled in the repo.
 

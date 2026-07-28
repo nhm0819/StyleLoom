@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import pytest
 from styleloom_core import extract_style
 from styleloom_core.errors import ToolError
@@ -35,9 +38,34 @@ def test_hook_window_cut_count_is_measured(ctx, reference_video):
     assert 1 <= style.hook_style.cut_count <= 3
 
 
+def test_bare_filename_resolves_against_the_uploads_dir(ctx, reference_video):
+    """The point of the uploads dir: a filename works from any cwd."""
+    ctx.settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(reference_video, ctx.settings.uploads_dir / "ref01.mp4")
+
+    style = extract_style(ctx, "byname", [Path("ref01.mp4")])
+    assert style.source_refs == ["ref01.mp4"]
+
+
+def test_path_outside_the_uploads_dir_still_works(ctx, reference_video):
+    """Absolute paths are the fallback, not a rejected input."""
+    assert reference_video.is_absolute()
+    style = extract_style(ctx, "bypath", [reference_video])
+    assert style.source_refs == [reference_video.name]
+
+
 def test_missing_reference_is_reported_clearly(ctx, tmp_path):
     with pytest.raises(ToolError, match="not found"):
         extract_style(ctx, "x", [tmp_path / "nope.mp4"])
+
+
+def test_missing_reference_names_every_place_it_looked(ctx):
+    """A bare filename fails in two places; the message has to say both."""
+    with pytest.raises(ToolError) as exc:
+        extract_style(ctx, "x", [Path("nope.mp4")])
+    message = str(exc.value)
+    assert str(ctx.settings.uploads_dir / "nope.mp4") in message
+    assert "nope.mp4" in message
 
 
 def test_no_reference_is_rejected(ctx):

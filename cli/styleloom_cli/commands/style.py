@@ -16,7 +16,13 @@ app = typer.Typer(no_args_is_help=True, help="레퍼런스 영상에서 스타�
 @app.command("extract")
 def extract(
     style_id: Annotated[str, typer.Argument(help="저장할 스타일 ID")],
-    refs: Annotated[list[Path], typer.Argument(help="레퍼런스 영상 파일 (1개 이상)")],
+    refs: Annotated[
+        list[Path],
+        typer.Argument(
+            help="레퍼런스 영상 (1개 이상). 파일명만 주면 <data-dir>/uploads/ 에서 "
+            "찾고, 없으면 준 경로 그대로 씁니다 (절대경로 가능)."
+        ),
+    ],
     notes: Annotated[str, typer.Option(help="스타일에 남길 메모")] = "",
     data_dir: Annotated[Path | None, typer.Option("--data-dir")] = None,
     llm: Annotated[str | None, typer.Option(help="mock | anthropic")] = None,
