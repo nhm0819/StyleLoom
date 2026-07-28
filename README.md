@@ -525,8 +525,8 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 | `STYLELOOM_LLM_PROVIDER` | `auto` | `auto` \| `mock` \| `anthropic` |
 | `STYLELOOM_LLM_MODEL` | `claude-sonnet-5` | |
 | `STYLELOOM_VIDEO_PROVIDER` | `auto` | `auto` \| `mock` \| `fal` |
-| `STYLELOOM_FAL_T2I_MODEL` | `fal-ai/flux-2-flex` | a fal **endpoint ID**, not a URL. Must be a key in `configs/fal_models.yaml` |
-| `STYLELOOM_FAL_I2V_MODEL` | `fal-ai/kling-video/v3/pro/image-to-video` | ditto. `styleloom models` prices the alternatives |
+| `STYLELOOM_FAL_T2I_MODEL` | `fal-ai/flux/dev` | a fal **endpoint ID**, not a URL. Must be a key in `configs/fal_models.yaml` |
+| `STYLELOOM_FAL_I2V_MODEL` | `fal-ai/kling-video/v3/standard/image-to-video` | ditto. `styleloom models` prices the alternatives |
 | `STYLELOOM_FAL_TIMEOUT_SEC` | `600` | Per generation |
 | `STYLELOOM_RENDER_MODE` | `per_shot` | `per_shot` \| `multi_shot` |
 | `STYLELOOM_WIDTH` / `_HEIGHT` / `_FPS` | `720` / `1280` / `30` | Vertical 9:16 by default |
@@ -567,9 +567,35 @@ Kling 3.0 into two endpoint families:
 | `kling-video/o3/*` | Kling 3.0 Omni (Kling O3) | `image_url`, plus `end_image_url` | reference-heavy tier. Its image-to-video schema does not list `elements` |
 
 `elements` is the character-reference path, so it is what keeps the cast creator
-the same person across cuts — which is why `v3/pro` is the default rather than the
-Omni family. Both share one concurrency alias (`fal-ai/kling-video-v3`), so the
-1-per-user limit applies across both.
+the same person across cuts — which is why the default is a `v3` endpoint rather
+than the Omni family. That is a capability decision and not a price one:
+`o3/standard` costs the same $0.084/s. Both families share one concurrency alias
+(`fal-ai/kling-video-v3`), so the 1-per-user limit applies across both.
+
+### Both defaults are the cheapest endpoint that does the job
+
+The default is what an evaluation run costs, so neither default is the premium
+tier. Rates read off the fal model pages on 2026-07-28:
+
+| | endpoint | rate | |
+|---|---|---|---|
+| t2i | **`fal-ai/flux/dev`** | $0.025/MP | default |
+| | `fal-ai/flux-2-flex` | $0.06/MP | better typography, multi-image references |
+| i2v | **`fal-ai/kling-video/v3/standard/image-to-video`** | $0.084/s | default |
+| | `fal-ai/kling-video/v3/pro/image-to-video` | $0.112/s | same parameters, same 3s floor |
+| | `bytedance/seedance-2.0/image-to-video` | $0.303/s | highest Elo, 4s floor, no `elements` |
+
+Kling v3 Standard and Pro take an identical request and have the same floor, so
+Pro buys output quality and nothing the pipeline depends on. The keyframe is the
+i2v start image rather than a deliverable, and FLUX.2 [flex]'s advantages over
+FLUX.1 [dev] are typography and reference images — this pipeline burns its text
+with ffmpeg and passes the creator reference to Kling's `elements`, so it uses
+neither.
+
+`styleloom models --style <id>` prices all of them against a real shot count
+before anything is spent. And with no `FAL_KEY` at all the pipeline runs end to
+end on the mock video provider for $0, which is the cheapest way to test
+everything except generation quality.
 
 ---
 

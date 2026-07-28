@@ -28,13 +28,22 @@
 # path. `max_shots_per_request` is the other half of the limit and binds
 # independently of `max_shot_window_sec`.
 #
-# NAMING, because it is genuinely confusing. `kling-video/v3/*` IS Kling 3.0 --
-# fal's own page for v3/pro is titled "Kling 3.0 Pro". There is a separate `o3`
-# family which fal's site footer also links as "Kling 3.0". They are not aliases:
+# NAMING, because it is genuinely confusing, and because these strings get
+# mistaken for URLs. They are fal ENDPOINT IDs: fal posts to
+# https://fal.run/<endpoint-id> and the model page is
+# https://fal.ai/models/<endpoint-id>. The slashes are fal's vendor/model/tier/task
+# namespace. KlingAI's own Open Platform is a different service; its model names
+# are not valid values here.
+#
+# `kling-video/v3/*` IS Kling 3.0 -- fal's own page for v3/pro is titled "Kling 3.0
+# Pro". The separate `o3` family is Kling 3.0 Omni; fal states plainly that "Kling
+# O3 (VIDEO 3.0 Omni) is the upgrade from O1", and positions O3 for reference-heavy
+# workflows and V3 for prompt-driven cinematic generation. They are not aliases:
 # o3 takes `image_url` (not `start_image_url`), adds `end_image_url`, and its
 # image-to-video schema does NOT list `elements`. Switching to o3 would cost the
-# creator-consistency path, so v3 stays. Kling 3.0's own concurrency limit is
-# shared across all v3 and o3 endpoints at 1 per user.
+# creator-consistency path, so v3 stays -- note this is a capability decision, not
+# a price one, since o3/standard is $0.084/s, the same as v3/standard. Kling 3.0's
+# concurrency limit is shared across all v3 and o3 endpoints at 1 per user.
 #
 # CANDIDATES NOT ADDED HERE. Each needs its parameter names read off the model
 # page first -- guessing them is exactly the failure this file exists to prevent:
@@ -44,8 +53,12 @@
 #   * alibaba/happy-horse/i2v      native Korean lip-sync, $0.14/s @720p
 #   * fal-ai/veo3.1/image-to-video the non-fast Veo 3.1 tier; only the `fast`
 #                                  endpoint has been verified here
-#   * fal-ai/kling-video/v3/4k     same request shape as v3/pro per the schema,
-#                                  but the rate is not published
+#   * fal-ai/flux-2/flash          $0.005/MP, 5x cheaper than flux/dev and the
+#                                  cheapest keyframe path seen. Its endpoint ID
+#                                  and size parameter have not been read off the
+#                                  model page, and this file does not guess
+#   * fal-ai/kling-video/v3/4k     same request shape as v3/pro per the schema.
+#                                  $0.42/s regardless of audio -- 5x the default
 #   * fal-ai/kling-video/o3/pro    start+end frame and multi_prompt, but no
 #                                  `elements` on the i2v endpoint; the sibling
 #                                  o3/pro/reference-to-video is where character
@@ -56,18 +69,27 @@ pricing_source: >-
   Elo figures stated as of 2026-06-14.
 
 text_to_image:
+  fal-ai/flux/dev:
+    # https://fal.ai/models/fal-ai/flux/dev
+    # The default. FLUX.1 [dev], $0.025/MP, billed rounded up to the megapixel --
+    # a 720x1280 keyframe is 0.92MP and therefore bills as 1.
+    #
+    # Cheaper than flux-2-flex and sufficient here: a keyframe is the i2v start
+    # image, never a deliverable. Flex's advantages are typography and up to 10
+    # reference images; this pipeline burns its text with ffmpeg and passes the
+    # creator reference to Kling's `elements`, so it uses neither.
+    size_mode: image_size_object
+    output_key: images
+    defaults: {}
+
   fal-ai/flux-2-flex:
     # https://fal.ai/models/fal-ai/flux-2-flex
+    # FLUX.2 [flex], $0.06/MP. Worth the 2.4x when a keyframe has to carry legible
+    # text, or when a real creator photo is passed as a reference image.
     size_mode: image_size_object
     output_key: images
     defaults:
       output_format: jpeg
-
-  fal-ai/flux/dev:
-    # https://fal.ai/docs/documentation/model-apis/fal-cdn
-    size_mode: image_size_object
-    output_key: images
-    defaults: {}
 
 image_to_video:
   bytedance/seedance-2.0/image-to-video:
@@ -107,11 +129,14 @@ image_to_video:
 
   fal-ai/kling-video/v3/pro/image-to-video:
     # https://fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video
-    # The default. Aspect ratio is inferred from the start image, so no aspect
-    # param. Default concurrency is 1 per user -- see MAX_CONCURRENT_RENDERS.
+    # The quality tier. Identical request shape and capabilities to v3/standard
+    # below, at $0.112/s against $0.084/s -- Pro buys output quality, not anything
+    # the pipeline depends on, so standard is the default and this is the upgrade.
+    # Aspect ratio is inferred from the start image, so no aspect param. Default
+    # concurrency is 1 per user -- see MAX_CONCURRENT_RENDERS.
     #
-    # Chosen over the higher-scoring Seedance 2.0 because of the two capabilities
-    # below, both of which this system's requirements depend on:
+    # Both Kling tiers are preferred over the higher-scoring Seedance 2.0 because
+    # of the two capabilities below, which this system's requirements depend on:
     #   elements     -- the only character-reference path here, so the cast
     #                   creator survives across cuts
     #   multi_prompt -- a list of {prompt, duration} shots in one generation, so
@@ -184,11 +209,17 @@ image_to_video:
       resolution: 720p
 
   fal-ai/kling-video/v3/standard/image-to-video:
-    # https://fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video/api
-    # Cheaper Kling 3.0 tier. Its request type (ImageToVideoV3StandardRequest)
-    # carries multi_prompt, elements and shot_type exactly like Pro -- an earlier
-    # revision of this file declined to claim them because they were unconfirmed.
-    # They are now confirmed, so the capabilities are declared.
+    # https://fal.ai/models/fal-ai/kling-video/v3/standard/image-to-video
+    # The default. Its request type (ImageToVideoV3StandardRequest) carries
+    # multi_prompt, elements and shot_type exactly like Pro -- an earlier revision
+    # of this file declined to claim them because they were unconfirmed. They are
+    # now confirmed, so the capabilities are declared.
+    #
+    # The rate was also missing here, which meant `styleloom models` printed "rate
+    # not recorded" for the cheapest endpoint in the file and the arithmetic that
+    # picks a default could not be done. Read off the model page 2026-07-28.
+    price_per_sec: 0.084       # audio off. 0.126 with audio, 0.154 with voice control.
+    price_per_sec_audio: 0.126
     capabilities: [multi_prompt, elements]
     multi_prompt_param: multi_prompt
     multi_prompt_duration_type: integer_string

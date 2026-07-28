@@ -68,15 +68,23 @@ class Settings(BaseSettings):
     )
     # Must be keys in configs/fal_models.yaml -- the provider validates on init.
     #
-    # The i2v default is Kling v3 Pro rather than the higher-scoring Seedance 2.0
-    # for two reasons specific to this system: it is the only endpoint here that
-    # accepts a character reference (`elements`), which is what keeps the cast
-    # creator the same person across cuts, and it exposes `multi_prompt`, which is
-    # the only way to get per-shot durations without paying the per-shot floor.
-    # Seedance 2.0 wins on raw output quality -- switch to it for a hero video
-    # where cost and creator consistency do not matter. See docs/TOOL_RATIONALE.md.
-    fal_t2i_model: str = "fal-ai/flux-2-flex"
-    fal_i2v_model: str = "fal-ai/kling-video/v3/pro/image-to-video"
+    # Both defaults are the cheapest endpoint that still does the job, because the
+    # default is what an evaluation run costs.
+    #
+    # i2v: Kling v3 Standard, $0.084/s. Its request type carries `elements` and
+    # `multi_prompt` exactly like Pro at $0.112/s -- same parameters, same floor,
+    # 25% less. Those two capabilities are why the default is Kling at all rather
+    # than the higher-scoring Seedance 2.0: `elements` is the only character
+    # reference here, so it keeps the cast creator the same person across cuts,
+    # and `multi_prompt` is the only way to get per-shot durations without paying
+    # the per-shot floor. Pro buys output quality, not capability -- switch up for
+    # a hero video. See docs/TOOL_RATIONALE.md.
+    #
+    # t2i: FLUX.1 [dev], $0.025/MP against FLUX.2 [flex]'s $0.06/MP. Keyframes are
+    # the i2v start image, not a deliverable, and flex's advantages over dev are
+    # typography and multi-image references -- neither of which this pipeline uses.
+    fal_t2i_model: str = "fal-ai/flux/dev"
+    fal_i2v_model: str = "fal-ai/kling-video/v3/standard/image-to-video"
     fal_timeout_sec: float = 600.0
 
     # --- Output ------------------------------------------------------------
