@@ -147,3 +147,30 @@ def test_the_test_count_is_current(readme):
         f"README claims {claimed.group(1)} tests but there are at least {collected} "
         "test functions -- the number is stale"
     )
+
+
+def test_env_example_matches_the_code_defaults():
+    """`.env.example` is copied to `.env` verbatim, so a stale line here does not
+    merely document the wrong default -- it overrides the right one.
+
+    Both drifts this catches were live: `STYLELOOM_LLM_MODEL` still said
+    `claude-sonnet-4-6`, and `STYLELOOM_FAL_I2V_MODEL` pointed at a Seedance
+    endpoint, which silently gave up `elements` and with it the creator
+    consistency the default exists to provide. The README was checked against the
+    code and stayed correct through the same period. This file was not checked.
+    """
+    defaults = Settings()
+    drift: list[str] = []
+    for line in (REPO_ROOT / ".env.example").read_text(encoding="utf-8").splitlines():
+        match = re.match(r"^(STYLELOOM_[A-Z0-9_]+)=(.*)$", line.strip())
+        if not match:
+            continue
+        var, raw = match.groups()
+        field = var.removeprefix("STYLELOOM_").lower()
+        assert field in type(defaults).model_fields, f"{var} is not a real setting"
+        # Compared after coercion, not as strings: the file writes `600` for a
+        # float field, which is the same value and not drift.
+        actual = getattr(defaults, field)
+        if getattr(Settings(**{field: raw}), field) != actual:
+            drift.append(f"{var}={raw!r}, code default is {str(actual)!r}")
+    assert not drift, "stale .env.example values: " + "; ".join(drift)

@@ -525,7 +525,7 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 | `STYLELOOM_LLM_PROVIDER` | `auto` | `auto` \| `mock` \| `anthropic` |
 | `STYLELOOM_LLM_MODEL` | `claude-sonnet-5` | |
 | `STYLELOOM_VIDEO_PROVIDER` | `auto` | `auto` \| `mock` \| `fal` |
-| `STYLELOOM_FAL_T2I_MODEL` | `fal-ai/flux-2-flex` | must be a key in `configs/fal_models.yaml` |
+| `STYLELOOM_FAL_T2I_MODEL` | `fal-ai/flux-2-flex` | a fal **endpoint ID**, not a URL. Must be a key in `configs/fal_models.yaml` |
 | `STYLELOOM_FAL_I2V_MODEL` | `fal-ai/kling-video/v3/pro/image-to-video` | ditto. `styleloom models` prices the alternatives |
 | `STYLELOOM_FAL_TIMEOUT_SEC` | `600` | Per generation |
 | `STYLELOOM_RENDER_MODE` | `per_shot` | `per_shot` \| `multi_shot` |
@@ -543,6 +543,34 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 Config files fall back to the copies bundled in the repo, so a fresh clone runs from
 any working directory.
 
+### The two `FAL_*_MODEL` values are endpoint IDs
+
+They read like URLs but are not. A fal endpoint ID is the path fal appends to
+`https://fal.run/`, so `fal-ai/kling-video/v3/pro/image-to-video` posts to
+`https://fal.run/fal-ai/kling-video/v3/pro/image-to-video`. The slashes are fal's
+namespace (`vendor/model/tier/task`), which is why the string is long. Both
+defaults have a model page under `https://fal.ai/models/<endpoint-id>`.
+
+Nothing here talks to KlingAI's own Open Platform (`kling.ai/document-api`). That
+is a separate service with its own auth and its own parameter names — Kling calls
+the start frame `image` and the shot list `multi_shot`, fal's v3 endpoints call
+them `start_image_url` and `multi_prompt`. Pasting a Kling model name or a docs
+URL into `STYLELOOM_FAL_I2V_MODEL` fails at startup, because the provider checks
+the value against the keys of `configs/fal_models.yaml` before doing any work.
+
+**`v3` versus `o3`, since Kling's own docs treat them as one page.** fal splits
+Kling 3.0 into two endpoint families:
+
+| fal family | Kling name | start frame | why it matters here |
+|---|---|---|---|
+| `kling-video/v3/*` | Kling 3.0 | `start_image_url` | the default. Carries `elements` and `multi_prompt` |
+| `kling-video/o3/*` | Kling 3.0 Omni (Kling O3) | `image_url`, plus `end_image_url` | reference-heavy tier. Its image-to-video schema does not list `elements` |
+
+`elements` is the character-reference path, so it is what keeps the cast creator
+the same person across cuts — which is why `v3/pro` is the default rather than the
+Omni family. Both share one concurrency alias (`fal-ai/kling-video-v3`), so the
+1-per-user limit applies across both.
+
 ---
 
 ## Tests
@@ -558,7 +586,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-196 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+211 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting
