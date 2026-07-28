@@ -30,10 +30,18 @@ from .schema import CaptionStyle
 # --------------------------------------------------------------------------- #
 
 FONT_CANDIDATES = [
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    # Weight before platform. A short-form caption is read at a glance over moving
+    # footage, so Bold is the target and Regular is a fallback rather than an equal
+    # alternative -- every Bold candidate is tried before any Regular one, so a
+    # machine with both installed always lands on Bold.
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",  # Debian, Ubuntu
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+    "C:/Windows/Fonts/malgunbd.ttf",  # Windows, 맑은 고딕 Bold
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "C:/Windows/Fonts/malgun.ttf",  # Windows, 맑은 고딕
+    # Latin-only last resort. Hangul renders as boxes here, but a non-Korean
+    # caption still burns instead of being dropped silently.
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
 
@@ -64,6 +72,26 @@ def resolve_font() -> str | None:
         if Path(path).exists():
             return path
     return None
+
+
+def filter_path(path: str | Path) -> str:
+    """A filesystem path, escaped for use as a filtergraph option value.
+
+    Needed the moment a Windows font path enters `drawtext`. ffmpeg reads `:` as an
+    option separator, so `fontfile=C:/Windows/Fonts/malgunbd.ttf` parses as
+    `fontfile=C` followed by a bare `/Windows/Fonts/malgunbd.ttf`, which drawtext
+    takes as its shorthand `text` option and then rejects the whole run with
+    "Both text and text file provided".
+
+    Two backslashes, not one: escaping is applied twice, once by the filtergraph
+    parser and once by the filter's own argument parser. A single backslash is
+    consumed by the first and the colon reaches the second bare, failing
+    identically to no escaping at all. Both forms were run against ffmpeg before
+    this was written.
+
+    A no-op on POSIX paths, which contain neither a colon nor a backslash.
+    """
+    return str(path).replace("\\", "/").replace(":", "\\\\:")
 
 
 def wrap_caption(text: str, width: int, max_lines: int = 3) -> str:
@@ -141,8 +169,8 @@ def burn_captions(
             alpha = "1"
 
         filters.append(
-            f"drawtext=fontfile={font}"
-            f":textfile={text_path}"
+            f"drawtext=fontfile={filter_path(font)}"
+            f":textfile={filter_path(text_path)}"
             f":fontcolor={style.color}"
             f":fontsize=h/18"
             f":borderw=6:bordercolor={style.stroke_color}"

@@ -11,6 +11,46 @@ the same channel.
 
 ## Install
 
+### Prerequisites
+
+Two things are installed outside pip, because they are binaries rather than Python
+packages. Neither is optional: ffmpeg does every render, probe, caption burn and
+concat, and without a font containing Hangul the caption filter is skipped and you
+get a silent, uncaptioned video.
+
+```bash
+# Debian, Ubuntu
+sudo apt-get install -y ffmpeg fonts-noto-cjk
+
+# macOS
+brew install ffmpeg   # 맑은 고딕 has no macOS equivalent; see the note below
+```
+
+```powershell
+# Windows
+winget install -e --id Gyan.FFmpeg
+```
+
+Windows needs no font install — Malgun Gothic (`malgunbd.ttf`) ships with the OS and
+is in the lookup list. What it does need is a **new terminal**: winget edits `PATH`,
+and a process already running does not see the change. If you launch tests from an
+editor, restart the editor itself — reloading the window is not enough, because the
+child process inherits the old environment. winget also has an intermittent bug
+where it does not register `PATH` at all, in which case add the `...\bin` directory
+by hand.
+
+On macOS no bundled font covers the lookup list, so install one and add its path to
+`FONT_CANDIDATES` in `agent-core/styleloom_core/media.py` — Apple SD Gothic Neo
+lives outside the searched locations and is not currently listed.
+
+Verify before anything else:
+
+```bash
+ffmpeg -version   # in a new terminal
+```
+
+### The package
+
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 python -m pip install -e agent-core -e cli
@@ -23,9 +63,14 @@ pip happens to belong to. If that is not the interpreter you later run, the inst
 succeeds and `import styleloom_core` still fails. `python -m pip` makes the two the
 same by construction. See [Import errors](#import-errors) if you hit it anyway.
 
-`doctor` checks the two things that are easy to miss: `ffmpeg` on `PATH`, and a
-CJK-capable font for Korean captions (`apt install fonts-noto-cjk`). It also prints
-which providers resolved, and why.
+`doctor` reports both prerequisites by resolved path, so it is the fastest way to
+tell an environment problem from a code problem. It also prints which providers
+resolved, and why:
+
+```
+ok    ffmpeg      /usr/bin/ffmpeg
+ok    CJK font    /usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc
+```
 
 No API keys are required. The defaults fall back to an offline LLM and an
 ffmpeg-only renderer, so the whole pipeline runs end to end on a fresh clone. See
@@ -480,7 +525,13 @@ pip install pytest
 python -m pytest
 ```
 
-192 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+Both suites build their fixture videos with ffmpeg, so `conftest.py` at the repo
+root checks for it at session start and exits with one line if it is missing. That
+check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
+once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
+which name ffmpeg or `PATH`.
+
+196 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting
