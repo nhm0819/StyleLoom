@@ -100,6 +100,19 @@
       "justMyCode": false
     },
     {
+      // agent-core's own entry point. Unlike the cli targets, this lands you in
+      // run_once rather than in Typer, and it pins data_dir to the repo root
+      // itself -- so it is the one config here that does not depend on "cwd".
+      // Edit the config block at the top of debug.py to change style or input.
+      "name": "core: debug driver (offline)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "styleloom_core.debug",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
       // For a scratch file that imports styleloom_core and drives it directly,
       // without going through the CLI.
       "name": "core: current file (scratch driver)",
