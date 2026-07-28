@@ -245,7 +245,13 @@ class FalVideoProvider(BaseVideoProvider):
 
         payload: dict = {"prompt": motion_prompt, **spec.get("defaults", {})}
         payload[spec["image_param"]] = image_url
-        payload[spec["duration_param"]] = str(seconds)  # string everywhere on fal
+        # `duration` is a string on every fal endpoint, but not the same string.
+        # Seedance and Kling take a bare number ("4"); Veo 2 takes a suffixed enum
+        # ("5s") and rejects anything else. Hence the format is spec data.
+        payload[spec["duration_param"]] = (
+            f"{seconds}s" if spec.get("duration_format") == "seconds_suffix"
+            else str(seconds)
+        )
 
         if spec.get("size_mode") == "resolution_enum":
             payload["resolution"] = spec.get("resolution", "720p")

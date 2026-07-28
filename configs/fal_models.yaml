@@ -122,6 +122,45 @@ image_to_video:
       generate_audio: false
       negative_prompt: "blur, distort, low quality, on-screen text, subtitles, watermark"
 
+  fal-ai/veo2/image-to-video:
+    # https://fal.ai/models/fal-ai/veo2/image-to-video/api
+    #
+    # DEPRECATED UPSTREAM. As of 2026-07-28 the model page carries "This endpoint
+    # is deprecated / This model is no longer supported". The spec below is read
+    # off that page and is correct, but requests may fail. It is here because it
+    # was asked for; `fal-ai/veo3.1/fast/image-to-video` is the live Google
+    # endpoint and its parameter names need reading off its own page before it is
+    # added -- see the CANDIDATES note at the top of this file.
+    #
+    # Three properties make this a poor default for short-form, all of them
+    # visible in the numbers rather than a matter of taste:
+    #   min_duration 5  the highest floor of any endpoint here. The ASMR style
+    #                   averages 0.76s per cut, so per_shot mode would buy 5s and
+    #                   discard 85% of it. Kling's 3s floor plus multi_prompt is
+    #                   cheaper by a wide margin.
+    #   no multi_prompt one generation per cut, so the floor cannot be amortised.
+    #   persona none    no reference-image parameter, so casting's creator
+    #                   portrait is dropped and the presenter re-rolls per cut.
+    #                   The provider warns rather than failing silently.
+    #
+    # The input image must be 16:9 or 9:16 or it is cropped to fit. The 720x1280
+    # keyframes this harness produces are 9:16, so no crop. Note the About section
+    # of the same page claims 16:9 only; the schema field description is the newer
+    # of the two and is what is recorded here.
+    #
+    # No price_per_sec: fal's comparison guide does not list a rate for this
+    # endpoint, and guessing one would make the cost estimator lie.
+    image_param: image_url
+    duration_param: duration
+    # Enum "5s" | "6s" | "7s" | "8s", not a bare number. See build_animate_payload.
+    duration_format: seconds_suffix
+    min_duration: 5
+    max_duration: 8
+    size_mode: none
+    output_key: video
+    persona_mode: none
+    defaults: {}
+
   fal-ai/kling-video/v3/standard/image-to-video:
     # Cheaper Kling tier. multi_prompt is documented for the Pro endpoint; not
     # confirmed here, so it is not claimed.

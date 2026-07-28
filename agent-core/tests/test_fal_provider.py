@@ -21,6 +21,7 @@ from styleloom_core.providers.video import FalVideoProvider, load_fal_specs
 
 SEEDANCE = "bytedance/seedance-2.0/fast/image-to-video"
 KLING_PRO = "fal-ai/kling-video/v3/pro/image-to-video"
+VEO2 = "fal-ai/veo2/image-to-video"
 FLUX = "fal-ai/flux-2-flex"
 
 
@@ -154,3 +155,34 @@ def test_landscape_settings_flip_the_aspect_ratio(stub_fal):
     provider = make_provider(stub_fal, i2v=SEEDANCE, width=1280, height=720)
     payload = provider.build_animate_payload("u", "p", 4.0, None)
     assert payload["aspect_ratio"] == "16:9"
+
+
+# --- Veo 2 ----------------------------------------------------------------- #
+
+
+def test_veo2_duration_is_a_suffixed_enum_not_a_bare_number(stub_fal):
+    """Veo 2's `duration` is "5s"|"6s"|"7s"|"8s". Sending "5" is rejected, and
+    that is exactly the class of silent breakage the spec file exists to stop."""
+    provider = make_provider(stub_fal, i2v=VEO2)
+    payload = provider.build_animate_payload("https://cdn.test/k.jpg", "push in", 1.2, None)
+
+    assert payload["image_url"] == "https://cdn.test/k.jpg"
+    assert payload["duration"] == "5s", "5s floor, and the 's' suffix is required"
+    assert "start_image_url" not in payload
+    assert "aspect_ratio" not in payload, "aspect is inferred from the input image"
+    assert "resolution" not in payload
+
+
+def test_veo2_clamps_to_its_eight_second_ceiling(stub_fal):
+    provider = make_provider(stub_fal, i2v=VEO2)
+    assert provider.min_clip_sec == 5.0
+    assert provider.build_animate_payload("u", "p", 20.0, None)["duration"] == "8s"
+
+
+def test_veo2_has_no_persona_or_multi_shot_path(stub_fal):
+    provider = make_provider(stub_fal, i2v=VEO2)
+    assert provider.supports_persona is False
+    assert provider.supports_multi_shot is False
+    with pytest.warns(UserWarning, match="persona ignored"):
+        payload = provider.build_animate_payload("u", "p", 5.0, "https://cdn.test/me.jpg")
+    assert "elements" not in payload

@@ -198,6 +198,16 @@ consistency do not matter, `STYLELOOM_FAL_I2V_MODEL=bytedance/seedance-2.0/image
 is one environment variable. What this system sells is repeatable output with a
 consistent presenter, and on those axes Kling wins.
 
+**Veo 2 is available but is not a contender for the default.** `fal-ai/veo2/image-to-video`
+is in the spec file, verified against its model page, and selectable with one
+environment variable. It loses on all three axes above: no `multi_prompt`, no
+reference-image parameter, and a 5s duration floor — the highest here, which on the
+ASMR style's 0.76s average cut means paying for 5s and discarding 85% of it. It also
+caps at 8s where the others reach 15s. Separately, fal marks the endpoint deprecated
+as of 2026-07-28, so it may simply stop answering. The live Google endpoint is
+`fal-ai/veo3.1/fast/image-to-video`; it is not in the spec file yet for the same
+reason the three below are not.
+
 **Not added, and deliberately so.** Three endpoints look worth having and are absent
 from `configs/fal_models.yaml` because their parameter names were not read off the
 model page: `google/nano-banana-2` (holds one person's identity across generations
