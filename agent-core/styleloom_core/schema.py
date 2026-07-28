@@ -53,18 +53,16 @@ class Look(BaseModel):
 
 
 class CaptionStyle(BaseModel):
-    font: str = "bold_sans"
     pos: Literal["top", "center", "center_lower", "bottom"] = "center_lower"
+    # Only "pop_in" is honoured, as a 0.12s alpha ramp in media.burn_captions.
     anim: str = "pop_in"
     max_chars_per_line: int = 14
     color: str = "white"
     stroke_color: str = "black"
-    appear_on_beat: bool = True
 
 
 class AudioStyle(BaseModel):
     bpm: float = 120.0
-    sfx_on_cut: bool = True
     voice_tone: str = "neutral"
 
 
@@ -78,7 +76,6 @@ class HookStyle(BaseModel):
     window_sec: float = 3.0
     shot_size: ShotSize = "CU"
     cut_count: int = 2
-    text_patterns: list[str] = Field(default_factory=lambda: ["question"])
 
 
 class StyleSchema(BaseModel):

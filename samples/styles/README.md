@@ -76,9 +76,9 @@ Both styles:
   the face-area ratios above.
 - `caption.pos`, `caption.max_chars_per_line` — set from the caption-band
   estimate and the shot length (0.76s reads far less text than 4.04s).
-- `hook_style.shot_size`, `hook_style.text_patterns` — the extractor defaults to
-  `CU` and `["question"]` regardless of the reference. `text_patterns` values are
-  real ids from `configs/archetypes.yaml`.
+- `hook_style.shot_size` — the extractor defaults to `CU` regardless of the
+  reference. The archetype pool the hook actually samples from is not a style
+  field at all; it lives in `configs/archetypes.yaml`.
 
 `beat_pattern` was also changed on both, to make the storyboard's derived shot
 count match the measured one:

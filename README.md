@@ -719,8 +719,9 @@ Two alternatives, neither needed if the above works:
 - **BPM is estimated from cut intervals**, not audio onsets. Short-form edits cut on
   the beat often enough for this to be useful, but it is a heuristic and it is wrong
   on footage that does not.
-- **Caption timing is per shot, not per beat.** `CaptionStyle.appear_on_beat` exists
-  in the schema and is not yet honoured; captions land at shot boundaries.
+- **Caption timing is per shot, not per beat.** Captions land at shot boundaries.
+  Beat-level timing would need `pacing.cut_times` and the estimated BPM wired into
+  `assemble`; neither is done, so the schema does not pretend otherwise.
 - **Creator consistency is best-effort, and only on Kling v3** via its `elements`
   parameter. On Seedance the provider warns and proceeds rather than silently
   dropping the reference. Offline the creator varies through prompt tokens only.

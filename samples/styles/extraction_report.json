@@ -55,14 +55,6 @@
         "field": "hook_style.shot_size",
         "to": "ECU",
         "why": "오프닝이 제품 매크로. 인물 클로즈업이 아님."
-      },
-      {
-        "field": "hook_style.text_patterns",
-        "to": [
-          "visual_impact",
-          "reversal"
-        ],
-        "why": "보이스오버가 없어 첫 프레임의 시각적 충격이 훅을 담당. configs/archetypes.yaml의 실제 id 사용."
       }
     ],
     "path": "/home/claude/out/biodance_asmr_montage/style.json"
@@ -116,15 +108,6 @@
         "field": "hook_style.shot_size",
         "to": "CU",
         "why": "오프닝부터 얼굴 면적비 0.26. 클로즈업으로 시작."
-      },
-      {
-        "field": "hook_style.text_patterns",
-        "to": [
-          "question",
-          "empathy",
-          "contradiction"
-        ],
-        "why": "직접 화법 리뷰의 오프닝. 시각적 충격이 아니라 말로 붙잡는 구조."
       }
     ],
     "path": "/home/claude/out/biodance_ugc_talkinghead/style.json"

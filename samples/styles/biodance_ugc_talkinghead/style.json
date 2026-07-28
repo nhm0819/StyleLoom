@@ -47,28 +47,20 @@
     ]
   },
   "caption": {
-    "font": "bold_sans",
     "pos": "center",
     "anim": "pop_in",
     "max_chars_per_line": 16,
     "color": "white",
-    "stroke_color": "black",
-    "appear_on_beat": true
+    "stroke_color": "black"
   },
   "audio": {
     "bpm": 114.3,
-    "sfx_on_cut": true,
     "voice_tone": "calm_confessional_direct_address"
   },
   "hook_style": {
     "window_sec": 3.0,
     "shot_size": "CU",
-    "cut_count": 1,
-    "text_patterns": [
-      "question",
-      "empathy",
-      "contradiction"
-    ]
+    "cut_count": 1
   },
   "notes": "한 사람이 카메라를 보고 말하는 UGC 리뷰. 12.13초에 컷이 2개뿐이고 첫 3초에는 없다. 얼굴이 샘플 프레임의 57%에서 검출되며 화면 면적의 28%를 차지해 클로즈업 토킹헤드로 판정했다. 8.2초의 컷은 히스토그램 거리 0.994로 사실상 전체 화면 교체 -- 얼굴 검출이 여기서 끊기므로 제품 엔드카드로 본다."
 }

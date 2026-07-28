@@ -61,27 +61,20 @@
     ]
   },
   "caption": {
-    "font": "bold_sans",
     "pos": "center_lower",
     "anim": "pop_in",
     "max_chars_per_line": 12,
     "color": "white",
-    "stroke_color": "black",
-    "appear_on_beat": true
+    "stroke_color": "black"
   },
   "audio": {
     "bpm": 128.8,
-    "sfx_on_cut": true,
     "voice_tone": "no_voiceover_asmr_sfx_led"
   },
   "hook_style": {
     "window_sec": 3.0,
     "shot_size": "ECU",
-    "cut_count": 5,
-    "text_patterns": [
-      "visual_impact",
-      "reversal"
-    ]
+    "cut_count": 5
   },
   "notes": "손과 제품만으로 구성된 초고속 몽타주. 10.7초에 14컷, 첫 3초에만 5컷이 들어간다. 얼굴은 샘플 프레임의 5%에서만 검출되고 검출돼도 화면의 5% 미만이라 토킹헤드가 아니라 제품·질감 중심 편집으로 판정했다. 컷이 대사 호흡이 아니라 동작과 효과음에 맞춰 떨어진다."
 }
