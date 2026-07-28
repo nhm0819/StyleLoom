@@ -4,8 +4,10 @@
 # fal.ai model pages (July 2026):
 #
 #   * Seedance 2.0 takes `image_url`; Kling v3 takes `start_image_url`.
-#   * `duration` is a STRING everywhere, and every i2v model has a floor
-#     (Seedance 4s, Kling 3s) well above a typical short-form shot length.
+#   * `duration` is a STRING everywhere, but not the same string: Seedance and
+#     Kling take a bare number ("4"), Veo 3.1 a suffixed enum ("6s") drawn from a
+#     sparse set. Every i2v model has a floor (Seedance 4s, Kling 3s, Veo 3.1 4s)
+#     well above a typical short-form shot length.
 #   * Seedance sizes via a `resolution` enum; Flux 2 via an `image_size` object.
 #
 # That is why this file exists instead of one hardcoded payload. Adding a model
@@ -19,9 +21,20 @@
 # spend anything. Rates move; the source and date are below and worth re-checking.
 # Where a rate is not recorded it is left out rather than guessed.
 #
-# `capabilities` is what the provider does NOT yet use, but the cost estimator
-# does: `multi_prompt` marks endpoints that accept a list of {prompt, duration}
-# shots in ONE generation, which removes the per-shot duration floor entirely.
+# `capabilities` marks what an endpoint can do: `multi_prompt` accepts a list of
+# {prompt, duration} shots in ONE generation, lowering the billed floor from the
+# endpoint's minimum to 1s per cut. Not to zero -- the per-shot duration is an
+# integer enum, so sub-second cuts are neither billable nor deliverable on that
+# path. `max_shots_per_request` is the other half of the limit and binds
+# independently of `max_shot_window_sec`.
+#
+# NAMING, because it is genuinely confusing. `kling-video/v3/*` IS Kling 3.0 --
+# fal's own page for v3/pro is titled "Kling 3.0 Pro". There is a separate `o3`
+# family which fal's site footer also links as "Kling 3.0". They are not aliases:
+# o3 takes `image_url` (not `start_image_url`), adds `end_image_url`, and its
+# image-to-video schema does NOT list `elements`. Switching to o3 would cost the
+# creator-consistency path, so v3 stays. Kling 3.0's own concurrency limit is
+# shared across all v3 and o3 endpoints at 1 per user.
 #
 # CANDIDATES NOT ADDED HERE. Each needs its parameter names read off the model
 # page first -- guessing them is exactly the failure this file exists to prevent:
@@ -29,7 +42,14 @@
 #                                  generations without fine-tuning; the natural
 #                                  upgrade for casting's creator portrait
 #   * alibaba/happy-horse/i2v      native Korean lip-sync, $0.14/s @720p
-#   * fal-ai/kling-video/o3/pro    start+end frame, also has multi_prompt
+#   * fal-ai/veo3.1/image-to-video the non-fast Veo 3.1 tier; only the `fast`
+#                                  endpoint has been verified here
+#   * fal-ai/kling-video/v3/4k     same request shape as v3/pro per the schema,
+#                                  but the rate is not published
+#   * fal-ai/kling-video/o3/pro    start+end frame and multi_prompt, but no
+#                                  `elements` on the i2v endpoint; the sibling
+#                                  o3/pro/reference-to-video is where character
+#                                  consistency lives on that family
 
 pricing_source: >-
   fal.ai/learn/tools/best-image-to-video-apis-2026, retrieved 2026-07-26,
@@ -101,15 +121,19 @@ image_to_video:
     quality_elo: 1075
     capabilities: [multi_prompt, elements]
     multi_prompt_param: multi_prompt
-    # UNVERIFIED. The top-level `duration` is a string on every fal endpoint, so
-    # the nested per-shot duration is sent as a string for consistency. This was
-    # inferred from the sibling parameter, not read off the model page, and a
-    # wrong type here is the kind of thing fal ignores silently. If a multi_shot
-    # request is rejected or comes back the wrong length, change this to `number`
-    # first -- it is a one-line data change and the payload builder is unit-tested
-    # against both.
-    multi_prompt_duration_type: string
+    # VERIFIED against the model page's KlingV3MultiPromptElement type. The nested
+    # per-shot `duration` is a string, and the earlier guess of "string" was right
+    # -- but the guess missed the part that matters: it is an INTEGER enum, values
+    # 1 through 15. "1.2" is not a member. Sub-second cuts are therefore not
+    # expressible in a multi_prompt request at all; the shortest legal shot is 1s.
+    # A style whose average cut is 0.76s cannot be reproduced on this path, which
+    # is why per_shot remains the default. qc's cut_timing_drift measures what the
+    # rounding costs.
+    multi_prompt_duration_type: integer_string
     max_shot_window_sec: 15
+    # 1-6 shots per request, and the total must not exceed max_shot_window_sec.
+    # Windowing has to respect both or a request with 7+ cuts is rejected outright.
+    max_shots_per_request: 6
     image_param: start_image_url
     duration_param: duration
     min_duration: 3
@@ -120,50 +144,56 @@ image_to_video:
     max_concurrency: 1
     defaults:
       generate_audio: false
+      # Required alongside multi_prompt. "customize" keeps the cuts where the
+      # storyboard put them; "intelligent" hands shot structure to the model,
+      # which would make the reference's pacing unreproducible.
+      shot_type: customize
       negative_prompt: "blur, distort, low quality, on-screen text, subtitles, watermark"
 
-  fal-ai/veo2/image-to-video:
-    # https://fal.ai/models/fal-ai/veo2/image-to-video/api
+  fal-ai/veo3.1/fast/image-to-video:
+    # https://fal.ai/models/fal-ai/veo3.1/fast/image-to-video/api
+    # Google's current i2v generation, replacing the deprecated veo2 endpoint.
     #
-    # DEPRECATED UPSTREAM. As of 2026-07-28 the model page carries "This endpoint
-    # is deprecated / This model is no longer supported". The spec below is read
-    # off that page and is correct, but requests may fail. It is here because it
-    # was asked for; `fal-ai/veo3.1/fast/image-to-video` is the live Google
-    # endpoint and its parameter names need reading off its own page before it is
-    # added -- see the CANDIDATES note at the top of this file.
+    # `duration` is a NON-CONTIGUOUS enum: 4s, 6s, 8s. There is no 5s or 7s, so
+    # clamping between a min and a max is not enough -- a 5s request has to snap
+    # to a legal value. Hence duration_choices, which the payload builder rounds
+    # UP into: buying 6s and trimming to 5s works, buying 4s for a 5s cut does not.
     #
-    # Three properties make this a poor default for short-form, all of them
-    # visible in the numbers rather than a matter of taste:
-    #   min_duration 5  the highest floor of any endpoint here. The ASMR style
-    #                   averages 0.76s per cut, so per_shot mode would buy 5s and
-    #                   discard 85% of it. Kling's 3s floor plus multi_prompt is
-    #                   cheaper by a wide margin.
-    #   no multi_prompt one generation per cut, so the floor cannot be amortised.
-    #   persona none    no reference-image parameter, so casting's creator
-    #                   portrait is dropped and the presenter re-rolls per cut.
-    #                   The provider warns rather than failing silently.
+    # Floor 4s with no multi_prompt means the same waste arithmetic as Seedance:
+    # fine for a hero cut, expensive at short-form pacing. No `elements`, so the
+    # cast creator is prompt tokens only and the provider warns.
     #
-    # The input image must be 16:9 or 9:16 or it is cropped to fit. The 720x1280
-    # keyframes this harness produces are 9:16, so no crop. Note the About section
-    # of the same page claims 16:9 only; the schema field description is the newer
-    # of the two and is what is recorded here.
+    # generate_audio defaults to TRUE upstream, unlike every other endpoint here.
+    # Left off explicitly: captions are burned by ffmpeg and BGM is the caller's,
+    # so model audio is unwanted noise that is also billed.
     #
-    # No price_per_sec: fal's comparison guide does not list a rate for this
-    # endpoint, and guessing one would make the cost estimator lie.
+    # No price_per_sec: fal's comparison guide does not publish a rate for the
+    # fast tier, and the estimator says so rather than inventing one.
     image_param: image_url
     duration_param: duration
-    # Enum "5s" | "6s" | "7s" | "8s", not a bare number. See build_animate_payload.
     duration_format: seconds_suffix
-    min_duration: 5
+    duration_choices: [4, 6, 8]
+    min_duration: 4
     max_duration: 8
     size_mode: none
+    aspect_param: aspect_ratio
     output_key: video
     persona_mode: none
-    defaults: {}
+    defaults:
+      generate_audio: false
+      resolution: 720p
 
   fal-ai/kling-video/v3/standard/image-to-video:
-    # Cheaper Kling tier. multi_prompt is documented for the Pro endpoint; not
-    # confirmed here, so it is not claimed.
+    # https://fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video/api
+    # Cheaper Kling 3.0 tier. Its request type (ImageToVideoV3StandardRequest)
+    # carries multi_prompt, elements and shot_type exactly like Pro -- an earlier
+    # revision of this file declined to claim them because they were unconfirmed.
+    # They are now confirmed, so the capabilities are declared.
+    capabilities: [multi_prompt, elements]
+    multi_prompt_param: multi_prompt
+    multi_prompt_duration_type: integer_string
+    max_shot_window_sec: 15
+    max_shots_per_request: 6
     image_param: start_image_url
     duration_param: duration
     min_duration: 3
@@ -174,4 +204,5 @@ image_to_video:
     max_concurrency: 1
     defaults:
       generate_audio: false
+      shot_type: customize
       negative_prompt: "blur, distort, low quality, on-screen text, subtitles, watermark"

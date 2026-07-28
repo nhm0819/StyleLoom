@@ -75,19 +75,29 @@ def render_shot(
     return trim_to(raw, shot.duration_sec, final)
 
 
-def split_windows(shots: list[Shot], window_sec: float) -> list[list[Shot]]:
+def split_windows(
+    shots: list[Shot], window_sec: float, max_shots: int = 0
+) -> list[list[Shot]]:
     """Group shots into generations that each fit inside one window.
 
     Greedy and order-preserving: a cut cannot be split across two generations, so
     a shot that would overflow the window starts the next one.
+
+    Two limits bind independently and both have to be honoured. Kling accepts
+    1-6 shots per multi_prompt request *and* 15s total; a 14-shot montage at
+    0.76s per cut satisfies the duration limit and violates the count one, and
+    the endpoint rejects the whole request rather than truncating it. `max_shots`
+    of 0 means the endpoint states no count limit.
     """
-    if window_sec <= 0:
+    if window_sec <= 0 and max_shots <= 0:
         return [list(shots)]
     windows: list[list[Shot]] = []
     current: list[Shot] = []
     elapsed = 0.0
     for shot in shots:
-        if current and elapsed + shot.duration_sec > window_sec:
+        over_time = window_sec > 0 and elapsed + shot.duration_sec > window_sec
+        over_count = max_shots > 0 and len(current) >= max_shots
+        if current and (over_time or over_count):
             windows.append(current)
             current, elapsed = [], 0.0
         current.append(shot)
@@ -146,7 +156,9 @@ def _render_multi_shot(
     """
     out_dir = session.workspace("shots")
     window_sec = ctx.video.max_shot_window_sec or FALLBACK_WINDOW_SEC
-    windows = split_windows(board.shots, window_sec)
+    windows = split_windows(
+        board.shots, window_sec, ctx.video.max_shots_per_request
+    )
 
     segments: list[ClipSegment] = []
     errors: dict[int, str] = {}

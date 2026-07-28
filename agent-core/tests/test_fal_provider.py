@@ -21,7 +21,7 @@ from styleloom_core.providers.video import FalVideoProvider, load_fal_specs
 
 SEEDANCE = "bytedance/seedance-2.0/fast/image-to-video"
 KLING_PRO = "fal-ai/kling-video/v3/pro/image-to-video"
-VEO2 = "fal-ai/veo2/image-to-video"
+VEO31 = "fal-ai/veo3.1/fast/image-to-video"
 FLUX = "fal-ai/flux-2-flex"
 
 
@@ -157,32 +157,56 @@ def test_landscape_settings_flip_the_aspect_ratio(stub_fal):
     assert payload["aspect_ratio"] == "16:9"
 
 
-# --- Veo 2 ----------------------------------------------------------------- #
+# --- Veo 3.1 --------------------------------------------------------------- #
 
 
-def test_veo2_duration_is_a_suffixed_enum_not_a_bare_number(stub_fal):
-    """Veo 2's `duration` is "5s"|"6s"|"7s"|"8s". Sending "5" is rejected, and
-    that is exactly the class of silent breakage the spec file exists to stop."""
-    provider = make_provider(stub_fal, i2v=VEO2)
-    payload = provider.build_animate_payload("https://cdn.test/k.jpg", "push in", 1.2, None)
+def test_veo31_snaps_duration_up_into_its_sparse_enum(stub_fal):
+    """Veo 3.1 allows 4s, 6s, 8s -- there is no 5s. Clamping between min and max
+    is not enough; an illegal member has to round UP to a legal one, because
+    buying more footage and trimming is recoverable and buying less is not."""
+    provider = make_provider(stub_fal, i2v=VEO31)
+    assert provider.build_animate_payload("u", "p", 1.0, None)["duration"] == "4s"
+    assert provider.build_animate_payload("u", "p", 4.0, None)["duration"] == "4s"
+    assert provider.build_animate_payload("u", "p", 5.0, None)["duration"] == "6s"
+    assert provider.build_animate_payload("u", "p", 7.0, None)["duration"] == "8s"
+    assert provider.build_animate_payload("u", "p", 30.0, None)["duration"] == "8s"
+
+
+def test_veo31_sends_aspect_ratio_and_keeps_model_audio_off(stub_fal):
+    provider = make_provider(stub_fal, i2v=VEO31)
+    payload = provider.build_animate_payload("https://cdn.test/k.jpg", "push in", 6.0, None)
 
     assert payload["image_url"] == "https://cdn.test/k.jpg"
-    assert payload["duration"] == "5s", "5s floor, and the 's' suffix is required"
-    assert "start_image_url" not in payload
-    assert "aspect_ratio" not in payload, "aspect is inferred from the input image"
-    assert "resolution" not in payload
+    assert payload["aspect_ratio"] == "9:16"
+    assert payload["resolution"] == "720p"
+    assert payload["generate_audio"] is False, "defaults to True upstream and is billed"
 
 
-def test_veo2_clamps_to_its_eight_second_ceiling(stub_fal):
-    provider = make_provider(stub_fal, i2v=VEO2)
-    assert provider.min_clip_sec == 5.0
-    assert provider.build_animate_payload("u", "p", 20.0, None)["duration"] == "8s"
-
-
-def test_veo2_has_no_persona_or_multi_shot_path(stub_fal):
-    provider = make_provider(stub_fal, i2v=VEO2)
+def test_veo31_has_no_persona_or_multi_shot_path(stub_fal):
+    provider = make_provider(stub_fal, i2v=VEO31)
     assert provider.supports_persona is False
     assert provider.supports_multi_shot is False
     with pytest.warns(UserWarning, match="persona ignored"):
-        payload = provider.build_animate_payload("u", "p", 5.0, "https://cdn.test/me.jpg")
-    assert "elements" not in payload
+        provider.build_animate_payload("u", "p", 6.0, "https://cdn.test/me.jpg")
+
+
+# --- Kling 3.0 multi_prompt correctness ------------------------------------ #
+
+
+def test_kling_per_shot_duration_is_an_integer_with_a_one_second_floor(stub_fal):
+    """KlingV3MultiPromptElement.duration is an integer enum, 1-15. Sending "0.76"
+    is not a member, so sub-second cuts are not expressible on this path."""
+    from styleloom_core.providers.base import MotionShot
+
+    provider = make_provider(stub_fal, i2v=KLING_PRO)
+    shots = [MotionShot(prompt=f"s{i}", duration=d) for i, d in enumerate((0.76, 1.4, 2.5))]
+    payload = provider.build_sequence_payload("https://cdn.test/k.jpg", shots, None)
+
+    assert [e["duration"] for e in payload["multi_prompt"]] == ["1", "1", "3"]
+    assert all(d.isdigit() for d in (e["duration"] for e in payload["multi_prompt"]))
+    assert payload["shot_type"] == "customize", "required when multi_prompt is used"
+
+
+def test_kling_declares_a_six_shot_cap(stub_fal):
+    provider = make_provider(stub_fal, i2v=KLING_PRO)
+    assert provider.max_shots_per_request == 6

@@ -303,3 +303,20 @@ def test_a_failed_window_costs_every_cut_in_it(settings, sink, style, monkeypatc
     assert record.status is RunStatus.FAILED
     assert record.stage == "render"
     assert "all" in (record.error or "")
+
+
+def test_windows_are_capped_by_shot_count_not_only_by_duration():
+    """Fourteen 0.76s cuts total under 11s and still exceed Kling's six-shot cap.
+    The endpoint rejects the whole request rather than truncating it, so the two
+    limits have to bind independently."""
+    shots = make_shots([0.76] * 14)
+    windows = render_tool.split_windows(shots, window_sec=15.0, max_shots=6)
+
+    assert [len(w) for w in windows] == [6, 6, 2]
+    assert sum(len(w) for w in windows) == 14, "no cut may be dropped"
+    assert [s.index for w in windows for s in w] == [s.index for s in shots]
+
+
+def test_a_count_cap_alone_still_splits_when_no_window_is_declared():
+    windows = render_tool.split_windows(make_shots([1.0] * 7), window_sec=0, max_shots=6)
+    assert [len(w) for w in windows] == [6, 1]

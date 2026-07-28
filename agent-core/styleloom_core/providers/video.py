@@ -15,6 +15,7 @@ the grade has drifted. See docs/TOOL_RATIONALE.md.
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import warnings
 from pathlib import Path
@@ -193,6 +194,12 @@ class FalVideoProvider(BaseVideoProvider):
         return float(self.i2v.get("max_shot_window_sec", 0))
 
     @property
+    def max_shots_per_request(self) -> int:
+        """Kling accepts 1-6 shots per multi_prompt request. Exceeding it is a
+        hard rejection, so windowing has to cap on count as well as duration."""
+        return int(self.i2v.get("max_shots_per_request", 0))
+
+    @property
     def max_concurrency(self) -> int:
         """The ceiling comes from the endpoint, not from settings: fal enforces a
         per-user concurrency limit and exceeding it fails the run."""
@@ -242,6 +249,13 @@ class FalVideoProvider(BaseVideoProvider):
         spec = self.i2v
         seconds = int(round(max(duration, spec.get("min_duration", 1))))
         seconds = min(seconds, int(spec.get("max_duration", seconds)))
+        # Some endpoints expose duration as a sparse enum (Veo 3.1: 4, 6, 8), so a
+        # clamped value can still be illegal. Round UP to a legal one: buying more
+        # footage and trimming it is recoverable, buying less is not.
+        choices = spec.get("duration_choices")
+        if choices:
+            longer = [c for c in sorted(choices) if c >= seconds]
+            seconds = longer[0] if longer else max(choices)
 
         payload: dict = {"prompt": motion_prompt, **spec.get("defaults", {})}
         payload[spec["image_param"]] = image_url
@@ -294,19 +308,27 @@ class FalVideoProvider(BaseVideoProvider):
                 "configs/fal_models.yaml after checking the model page."
             )
 
-        as_string = spec.get("multi_prompt_duration_type", "string") == "string"
+        duration_type = spec.get("multi_prompt_duration_type", "string")
         uses_elements = persona_url and spec.get("persona_mode") == "kling_elements"
         prefix = "@Element1 " if uses_elements else ""
 
         entries = []
         for shot in shots:
-            seconds = round(shot.duration, 2)
-            entries.append(
-                {
-                    "prompt": f"{prefix}{shot.prompt}",
-                    "duration": str(seconds) if as_string else seconds,
-                }
-            )
+            if duration_type == "integer_string":
+                # Kling's per-shot duration is an integer enum starting at 1, so a
+                # sub-second cut has no legal representation. Nearest second with a
+                # floor of 1 minimises drift; qc reports what the rounding cost
+                # rather than this pretending the timeline was honoured.
+                #
+                # floor(x + 0.5), not round(): round() is banker's rounding, so
+                # round(2.5) is 2 and a 2.5s cut would quietly lose half a second.
+                seconds: float | int = max(1, math.floor(shot.duration + 0.5))
+                value: str | float | int = str(seconds)
+            elif duration_type == "string":
+                value = str(round(shot.duration, 2))
+            else:
+                value = round(shot.duration, 2)
+            entries.append({"prompt": f"{prefix}{shot.prompt}", "duration": value})
 
         payload: dict = {**spec.get("defaults", {}), param: entries}
         payload[spec["image_param"]] = image_url

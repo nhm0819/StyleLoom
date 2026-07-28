@@ -46,18 +46,37 @@ def per_shot_cost(spec: dict, shots: int, shot_sec: float) -> tuple[float, float
     return billed * float(rate), billed
 
 
-def multi_prompt_cost(spec: dict, total_sec: float) -> tuple[float, float, int] | None:
+def multi_prompt_cost(
+    spec: dict, total_sec: float, shots: int
+) -> tuple[float, float, int] | None:
     """Cost, billed seconds and generation count using a multi-shot request.
 
-    Billed seconds equal the delivered length, because per-shot durations are
-    passed in the request rather than rounded up to a floor each time.
+    Two corrections over the naive version, both from the verified Kling schema:
+
+    * Generations are capped by shot count as well as by window length. Six cuts
+      per request means a 20-shot montage needs four generations even though its
+      total length fits in one window.
+    * Per-shot durations are an integer enum with a floor of 1s, so a sub-second
+      cut is billed at 1s. Billed seconds are the sum of the rounded shots, not
+      the delivered length -- multi_prompt removes the endpoint's 3s floor, not
+      arithmetic.
     """
     rate = spec.get("price_per_sec")
     if rate is None or "multi_prompt" not in (spec.get("capabilities") or []):
         return None
-    window = float(spec.get("max_duration", total_sec))
-    generations = max(math.ceil(total_sec / window), 1)
-    return total_sec * float(rate), total_sec, generations
+    window = float(spec.get("max_shot_window_sec") or spec.get("max_duration", total_sec))
+    max_shots = int(spec.get("max_shots_per_request", 0))
+
+    shot_sec = total_sec / max(shots, 1)
+    billed_per_shot = shot_sec
+    if spec.get("multi_prompt_duration_type") == "integer_string":
+        billed_per_shot = max(1.0, float(round(shot_sec)))
+    billed = shots * billed_per_shot
+
+    by_time = math.ceil(billed / window) if window > 0 else 1
+    by_count = math.ceil(shots / max_shots) if max_shots > 0 else 1
+    generations = max(by_time, by_count, 1)
+    return billed * float(rate), billed, generations
 
 
 @app.command("models")
@@ -102,7 +121,7 @@ def models(
             waste = (1 - total / billed) * 100
             per_shot_text = f"${cost:,.2f}  ({waste:.0f}% wasted)"
 
-        multi = multi_prompt_cost(spec, total)
+        multi = multi_prompt_cost(spec, total, shots)
         if multi is None:
             multi_text = "not supported" if "multi_prompt" not in caps else "rate not recorded"
         else:
@@ -142,11 +161,14 @@ def models(
         "\n  per-shot is what this repo does today: one generation per cut, billed at\n"
         "  the endpoint's minimum length. The wasted share is footage paid for and\n"
         "  trimmed off, because holding the reference's pacing matters more than the\n"
-        "  saving. multi_prompt passes per-shot durations in one request and removes\n"
-        "  that waste entirely. Implemented and opt-in: --render-mode multi_shot,\n"
-        "  or STYLELOOM_RENDER_MODE=multi_shot. It is not the default because the\n"
-        "  cuts then come from the model, so qc's cut_timing_drift decides whether\n"
-        "  the endpoint actually honoured the timeline it was given."
+        "  saving. multi_prompt carries several cuts in one request, which lowers\n"
+        "  the floor from the endpoint's minimum to 1s per cut -- not to zero: the\n"
+        "  per-shot duration is an integer, so a 0.76s cut is still billed as 1s and\n"
+        "  delivered as 1s. On a style whose cuts run under a second that trades\n"
+        "  money for pacing fidelity, which is the opposite of what this system is\n"
+        "  for. Opt-in: --render-mode multi_shot, or STYLELOOM_RENDER_MODE=multi_shot.\n"
+        "  Not the default, because the cuts then come from the model and qc's\n"
+        "  cut_timing_drift is what decides whether the timeline survived."
     )
 
     t2i = specs.get("text_to_image", {})

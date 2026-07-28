@@ -82,6 +82,16 @@ class BaseVideoProvider:
         """Longest single multi-shot generation. Callers split across windows."""
         return 0.0
 
+    @property
+    def max_shots_per_request(self) -> int:
+        """Most cuts one multi-shot generation accepts. 0 means no stated limit.
+
+        Separate from `max_shot_window_sec` because the two limits bind
+        independently: fourteen 0.76s cuts total under 11s and still exceed a
+        six-shot cap.
+        """
+        return 0
+
     def animate_sequence(
         self,
         image_path: Path,

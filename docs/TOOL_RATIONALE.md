@@ -184,10 +184,14 @@ pacing (20 shots, ~1.5s each):
 Seedance 2.0 is the better model and is not the default. Three reasons, in order
 of weight:
 
-1. **`multi_prompt`.** Kling v3 Pro accepts a list of `{prompt, duration}` shots in
-   one generation. That removes the duration floor entirely — a 1.2s cut bills 1.2s
-   instead of 3s — and is the only route to the reference's pacing without paying
-   for footage that gets trimmed off. Nothing else here offers it.
+1. **`multi_prompt`.** Kling 3.0 Pro accepts a list of `{prompt, duration}` shots in
+   one generation, lowering the billed floor from 3s to 1s per cut. It does *not*
+   remove the floor: re-reading the schema showed the nested duration is an integer
+   enum (1–15), so a 0.76s cut is billed and delivered as 1s. On the ASMR montage
+   that inflates an 10.7s video to 14s and destroys the pacing being copied — which
+   is why `per_shot` plus an ffmpeg trim remains the default and `multi_prompt` is
+   only the cheaper path for styles whose cuts already run a second or longer.
+   Nothing else here offers it at all.
 2. **`elements`.** It is the only endpoint that takes a character reference, so the
    creator cast per run stays the same person across cuts. Without it the
    "creator" element of the assignment is prompt tokens and hope.
@@ -198,15 +202,12 @@ consistency do not matter, `STYLELOOM_FAL_I2V_MODEL=bytedance/seedance-2.0/image
 is one environment variable. What this system sells is repeatable output with a
 consistent presenter, and on those axes Kling wins.
 
-**Veo 2 is available but is not a contender for the default.** `fal-ai/veo2/image-to-video`
-is in the spec file, verified against its model page, and selectable with one
-environment variable. It loses on all three axes above: no `multi_prompt`, no
-reference-image parameter, and a 5s duration floor — the highest here, which on the
-ASMR style's 0.76s average cut means paying for 5s and discarding 85% of it. It also
-caps at 8s where the others reach 15s. Separately, fal marks the endpoint deprecated
-as of 2026-07-28, so it may simply stop answering. The live Google endpoint is
-`fal-ai/veo3.1/fast/image-to-video`; it is not in the spec file yet for the same
-reason the three below are not.
+**Veo 3.1 is available and is not a contender for the default.**
+`fal-ai/veo3.1/fast/image-to-video` replaces the `veo2` endpoint, which fal marks
+deprecated. It loses on all three axes above: no `multi_prompt`, no reference-image
+parameter, and a 4s floor. Its `duration` is also a sparse enum — 4s, 6s, 8s, with
+no 5s or 7s — so the payload builder rounds up into a legal member rather than
+clamping. Selectable with one environment variable; not a default.
 
 **Not added, and deliberately so.** Three endpoints look worth having and are absent
 from `configs/fal_models.yaml` because their parameter names were not read off the
