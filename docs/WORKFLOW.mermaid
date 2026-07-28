@@ -1,0 +1,114 @@
+flowchart TB
+
+%% ===================== ① 스타일 추출 =====================
+subgraph EXTRACT["① 스타일 추출 · styleloom style extract · 레퍼런스당 1회"]
+  direction LR
+  REF["레퍼런스 영상<br/>1~N편"]
+  PROBE["media.probe_video<br/>디코드 1패스"]
+  KF["키프레임 최대 6장"]
+  METRIC["컷 타임 · 색 통계<br/>saturation·contrast·warmth"]
+  VISION["analyze.extract_style<br/>LLM vision → 언어 라벨"]
+  DROP(["폐기 · 생성 입력으로 가지 않음"])
+  STYLE[("style.json")]
+
+  REF --> PROBE
+  PROBE --> KF
+  PROBE --> METRIC
+  KF --> VISION
+  KF -. "저작권 · 판정 독립성" .-> DROP
+  VISION --> STYLE
+  METRIC --> STYLE
+end
+
+%% ===================== ② 런 파이프라인 =====================
+%% 실선 = 플랜의 실행 순서, 점선 = 툴이 선언한 reads
+subgraph RUN["② 런 파이프라인 · styleloom run · 입력 1개 → 영상 1편"]
+  direction TB
+  INPUT["RunInputs<br/>text / image / video"]
+
+  T1["ingest"]
+  T2["casting<br/>+ 크리에이터 초상 t2i"]
+  T3["outline"]
+  T4["hook<br/>후보 N개 → 점수 → 선택"]
+  T5["storyboard"]
+  T6["render"]
+  T7["assemble<br/>자막 번인 → concat"]
+  T8["qc<br/>결과물 재측정"]
+
+  A1[("brief")]
+  A2[("casting")]
+  A3[("outline<br/>본문 비트 + payoff")]
+  A4[("hook<br/>후보·점수·선택 근거")]
+  A5[("storyboard<br/>image_prompt·motion_prompt")]
+  A6[("render<br/>ClipSegment 목록")]
+  A7[("assemble<br/>final.mp4")]
+  A8[("qc_report.json")]
+
+  INPUT --> T1 --> T2 --> T3 --> T4 --> T5 --> T6 --> T7 --> T8
+  T1 --> A1
+  T2 --> A2
+  T3 --> A3
+  T4 --> A4
+  T5 --> A5
+  T6 --> A6
+  T7 --> A7
+  T8 --> A8
+
+  A1 -.-> T2
+  A1 -.-> T3
+  A1 -.-> T4
+  A3 -.-> T4
+  A1 -.-> T5
+  A2 -.-> T5
+  A3 -.-> T5
+  A4 -.-> T5
+  A5 -.-> T6
+  A2 -.-> T6
+  A5 -.-> T7
+  A6 -.-> T7
+  A5 -.-> T8
+  A6 -.-> T8
+  A7 -.-> T8
+end
+
+%% ===================== ③ render 내부 =====================
+subgraph RENDER["③ render 상세 · STYLELOOM_RENDER_MODE"]
+  direction TB
+  MODE{"렌더 모드"}
+  PS1["샷별 t2i 키프레임"]
+  PS2["샷별 i2v 애니메이트"]
+  PS3["ffmpeg trim<br/>하한 초과분 절삭"]
+  MS1["split_windows<br/>15초 AND 6샷 상한"]
+  MS2["윈도우 리드 t2i"]
+  MS3["animate_sequence<br/>multi_prompt · 정수초"]
+
+  MODE -->|"per_shot · 기본값 · 검증됨"| PS1 --> PS2 --> PS3
+  MODE -->|"multi_shot · 컷 1초 이상만"| MS1 --> MS2 --> MS3
+end
+
+%% ===================== 외부 입력 · 연결 =====================
+HIST[("ChoiceHistory<br/>최근 선택 로그")]
+ARCH[("configs/archetypes.yaml<br/>훅 아키타입 풀")]
+OPT["BGM · persona_ref<br/>선택 입력"]
+QCNOTE(["QC는 report-only<br/>실패해도 DONE · 게이트 미구현"])
+
+STYLE ==>|"casting·outline·hook·storyboard<br/>assemble·qc 가 모두 읽음"| RUN
+HIST <-.->|"recency penalty ↔ 선택 기록"| T2
+HIST <-.->|"recency penalty ↔ 선택 기록"| T4
+ARCH --> T4
+OPT --> T7
+T6 --> MODE
+PS3 -.-> A6
+MS3 -.-> A6
+A8 -.-> QCNOTE
+
+%% ===================== 스타일 =====================
+classDef artifact fill:#e8f0fe,stroke:#4a72c4,color:#1a2b4a
+classDef tool fill:#fff5e6,stroke:#d99b3d,color:#4a3411
+classDef note fill:#fbeaea,stroke:#c25555,color:#4a1a1a
+classDef ext fill:#eef7ee,stroke:#5aa05a,color:#1a3d1a
+
+class A1,A2,A3,A4,A5,A6,A7,A8,STYLE,HIST,ARCH artifact
+class T1,T2,T3,T4,T5,T6,T7,T8,PROBE,VISION,PS1,PS2,PS3,MS1,MS2,MS3 tool
+class DROP,QCNOTE note
+class REF,INPUT,KF,METRIC,OPT ext
