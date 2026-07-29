@@ -74,6 +74,12 @@ text_to_video:
     max_duration: 15
     max_shot_window_sec: 15
     max_shots_per_request: 6          # verified: "up to 6 storyboards, minimum 1"
+    max_prompt_chars: 2500            # top-level `prompt`, used by per_shot
+    max_shot_prompt_chars: 512        # verified: "the maximum length of the prompt
+                                      # for each storyboard 512 characters". Five
+                                      # times tighter than the top-level field, and
+                                      # the reason multi_shot prompts are built to
+                                      # a budget rather than written and hoped for.
     multi_shot_param: multi_shot      # "true"/"false" as strings in the example
     shot_type: customize              # verified. `intelligence` lets the model cut
                                       # its own shots, which is the opposite of

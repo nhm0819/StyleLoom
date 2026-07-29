@@ -144,6 +144,10 @@ class KlingVideoProvider(BaseVideoProvider):
         return int(self.t2v.get("max_shots_per_request", 0))
 
     @property
+    def max_shot_prompt_chars(self) -> int:
+        return int(self.t2v.get("max_shot_prompt_chars", 0))
+
+    @property
     def max_concurrency(self) -> int:
         """From settings, not from the spec file.
 
@@ -305,6 +309,12 @@ class KlingVideoProvider(BaseVideoProvider):
             **spec.get("defaults", {}),
         }
         payload[spec["duration_param"]] = self._duration_string(duration)
+        limit = int(spec.get("max_prompt_chars", 0))
+        if limit and len(prompt) > limit:
+            raise VideoProviderError(
+                f"prompt is {len(prompt)} characters, over {self.t2v_id}'s "
+                f"{limit}-character limit."
+            )
         return payload
 
     def build_sequence_payload(self, shots: list[MotionShot]) -> dict:
@@ -335,6 +345,19 @@ class KlingVideoProvider(BaseVideoProvider):
                 value: str | float = str(int(billed))
             else:
                 value = round(billed, 2)
+            limit = int(spec.get("max_shot_prompt_chars", 0))
+            if limit and len(shot.prompt) > limit:
+                # Refused, not trimmed. The caller builds prompts to this budget
+                # already; if one arrives over it, something upstream changed and
+                # a silent trim would cut mid-clause -- handing the model half a
+                # sentence and charging for the result.
+                raise VideoProviderError(
+                    f"storyboard entry {index} is {len(shot.prompt)} characters, "
+                    f"over {self.t2v_id}'s {limit}-character limit for a shot "
+                    "prompt. Shorten the style keywords, or render with "
+                    "render_mode=per_shot, where the whole prompt goes in the "
+                    f"top-level field ({spec.get('max_prompt_chars', '?')} chars)."
+                )
             entry: dict = {"prompt": shot.prompt, "duration": value}
             if spec.get("multi_prompt_indexed"):
                 entry = {"index": index, **entry}

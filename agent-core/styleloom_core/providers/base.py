@@ -80,6 +80,16 @@ class BaseVideoProvider:
         """Most cuts one multi-shot request accepts. 0 means no stated limit."""
         return 0
 
+    @property
+    def max_shot_prompt_chars(self) -> int:
+        """Longest prompt one storyboard entry inside a multi-shot request takes.
+
+        Far tighter than the top-level prompt -- 512 against a few thousand on
+        Kling -- and worth declaring separately because the difference decides how
+        much style context every cut can carry. 0 means no stated limit.
+        """
+        return 0
+
     def shot_billed_duration(self, seconds: float) -> float:
         """How long one cut inside a multi-shot request actually runs.
 

@@ -62,6 +62,14 @@ class MockVideoProvider(BaseVideoProvider):
         # runs split into the same number of windows a real one would.
         return 15.0
 
+    @property
+    def max_shot_prompt_chars(self) -> int:
+        # Same reasoning as the window above: ffmpeg does not care how long a
+        # prompt is, but if the offline provider declared no limit then the
+        # budgeting that keeps storyboard entries under Kling's 512 would never
+        # run in a test, and the first time it ran would be against a paid API.
+        return 512
+
     def generate(self, prompt: str, duration: float, out_path: Path) -> Path:
         scratch = out_path.parent / f"{out_path.stem}_still.jpg"
         return push_in(

@@ -291,3 +291,56 @@ def test_an_undecodable_video_degrades_instead_of_failing(ctx, style, tmp_path):
     assert brief.input_kind == "video"
     assert ctx.llm.calls[0]["images"] is None
     assert "no stills are attached" in ctx.llm.calls[0]["user"]
+
+
+# --- prompt length budget --------------------------------------------------- #
+#
+# Regression: a storyboard entry is capped at 512 characters while the top-level
+# prompt allows thousands, and every prompt this system builds was 590-700. Every
+# multi_shot request would have been rejected -- on the paid API, since the
+# offline provider declared no limit and so never exercised the budget.
+
+
+def test_multi_shot_prompts_fit_the_storyboard_entry_limit(ctx, style, brief, outline):
+    session = make_session(ctx, style, text="겨울철 건조한 피부 관리 루틴 총정리")
+    session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
+    session.artifacts["casting"] = casting_tool.casting(ctx, session)
+    ctx.settings.render_mode = "multi_shot"
+
+    board = storyboard_tool.storyboard(ctx, session)
+
+    limit = ctx.video.max_shot_prompt_chars
+    assert limit > 0, "the offline provider must declare the limit or this never runs"
+    for shot in board.shots:
+        assert len(shot.video_prompt) <= limit, f"shot {shot.index} is over by "\
+            f"{len(shot.video_prompt) - limit}"
+
+
+def test_per_shot_prompts_are_not_squeezed(ctx, style, brief, outline):
+    """The budget is a multi-shot constraint. Applying it everywhere would throw
+    away style context that the top-level field has room for."""
+    session = make_session(ctx, style, text="겨울철 건조한 피부 관리 루틴 총정리")
+    session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
+    session.artifacts["casting"] = casting_tool.casting(ctx, session)
+    ctx.settings.render_mode = "per_shot"
+
+    board = storyboard_tool.storyboard(ctx, session)
+
+    assert max(len(s.video_prompt) for s in board.shots) > ctx.video.max_shot_prompt_chars
+
+
+def test_the_budget_drops_whole_clauses_from_the_tail(ctx, style, brief):
+    """Identity and grade are what QC measures, so they outrank the descriptive
+    keywords. Truncating mid-token would hand the model half a sentence."""
+    session = make_session(ctx, style, text="주제")
+    session.artifacts["brief"] = brief
+    cast = casting_tool.casting(ctx, session)
+
+    full = storyboard_tool.style_tokens(style, cast)
+    squeezed = storyboard_tool.style_tokens(style, cast, budget=200)
+
+    assert len(squeezed) <= 200
+    assert full.startswith(squeezed.split(",")[0])
+    assert cast.creator.prompt in squeezed          # identity survives
+    assert not squeezed.endswith(",")               # no half-clause
+    assert all(part.strip() in full for part in squeezed.split(","))

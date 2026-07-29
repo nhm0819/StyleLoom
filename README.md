@@ -580,6 +580,15 @@ room across the cuts it makes itself. A 3-cut talking-head is one request and
 therefore one person; a 14-cut montage splits into three and is three people —
 better than the fourteen it used to be, and not the same as one.
 
+**Prompts are budgeted, and the two limits are five times apart.** A top-level
+`prompt` takes ~2500 characters; a single entry inside `multi_prompt` takes 512.
+The prompts this system builds run 590–700, so `per_shot` fits comfortably and
+`multi_shot` does not. In `multi_shot` the storyboard therefore builds each entry
+to fit, dropping whole clauses from the tail of the shared style tokens —
+keywords first, then contrast — so the budget is spent on identity and grade,
+which QC measures. Nothing is truncated mid-sentence, and the provider refuses an
+over-length entry rather than trimming it.
+
 **`kling-v3` versus `kling-v3-omni` are different paths.** Kling's own docs
 present 3.0 and 3.0 Omni on one page, and fal's naming hid the split further by
 putting both under `kling-video/{v3,o3}/…` with one call shape. Officially they
@@ -641,7 +650,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-231 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+234 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting

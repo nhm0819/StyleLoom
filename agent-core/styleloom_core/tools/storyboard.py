@@ -25,16 +25,26 @@ if TYPE_CHECKING:
 MIN_AVG_SHOT_SEC = 0.3
 
 
-def style_tokens(style: StyleSchema, casting: Casting) -> str:
+def style_tokens(style: StyleSchema, casting: Casting, budget: int = 0) -> str:
     """The look, the presenter and the location, compressed into prompt tokens.
 
-    Injected into *every* shot prompt rather than stated once, because image and
-    video models have no memory across calls -- a grade described only in shot 1
-    has drifted by shot 6, and a presenter described only once becomes a different
+    Injected into *every* shot prompt rather than stated once, because the video
+    model has no memory across calls -- a grade described only in shot 1 has
+    drifted by shot 6, and a presenter described only once becomes a different
     person by the third cut.
 
     Casting comes first: subject identity is the thing viewers notice breaking, so
     it should not sit at the tail of a long prompt where models weight it least.
+
+    `budget` caps the result, and the order below is also the drop order -- last
+    part goes first. It exists because a multi-shot request allows only 512
+    characters per storyboard entry while a top-level prompt allows several
+    thousand, so the same tokens have to survive a much tighter space. Dropping
+    from the tail spends the budget on identity and grade, which QC measures,
+    rather than on the descriptive keywords, which it does not.
+
+    Truncating mid-token instead would hand the model half a sentence; this only
+    ever removes whole clauses.
     """
     look = style.look
     parts = [
@@ -43,10 +53,17 @@ def style_tokens(style: StyleSchema, casting: Casting) -> str:
         f"{look.grade} colour grade",
         f"saturation {look.saturation:.2f}",
         f"contrast {look.contrast:.2f}",
-        "vertical 9:16 framing",
     ]
+    # No framing token. Under text-to-video `aspect_ratio` is an explicit request
+    # field, so spelling "vertical 9:16" into the prompt spends characters
+    # restating what the API already knows -- and inside a 512-character
+    # storyboard entry those characters cost `contrast`, which QC measures.
     parts += look.keywords[:4]
-    return ", ".join(p for p in parts if p)
+    parts = [p for p in parts if p]
+    if budget > 0:
+        while len(", ".join(parts)) > budget and len(parts) > 1:
+            parts.pop()
+    return ", ".join(parts)
 
 
 def ensure_distinct_frames(shots: list[Shot]) -> list[Shot]:
@@ -108,7 +125,29 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
     casting = session.get("casting", Casting)
 
     rng = random.Random()
+    # A multi-shot request allows 512 characters per storyboard entry; a
+    # single-cut request allows thousands. So the budget depends on how this
+    # storyboard will be rendered, and prompts are built to fit rather than
+    # truncated at the provider, where the cut would land mid-sentence.
+    #
+    # Measured against the whole `video_prompt`, not just the shared tokens: the
+    # beat text varies per shot and comes from a model, so a fixed split between
+    # "tokens" and "everything else" is right for the average shot and wrong for
+    # the long one -- which is the only one that matters here.
+    limit = ctx.video.max_shot_prompt_chars if ctx.settings.render_mode == "multi_shot" else 0
     tokens = style_tokens(style, casting)
+
+    def fit(scene: str, motion: str) -> str:
+        """Shrink the shared tokens until scene + motion fits the entry limit."""
+        if not limit or len(f"{scene} {motion}") <= limit:
+            return scene
+        head, _, tail = scene.partition(tokens)
+        for size in range(len(tokens), 0, -16):
+            shorter = style_tokens(style, casting, budget=size)
+            candidate = f"{head}{shorter}{tail}"
+            if len(f"{candidate} {motion}") <= limit:
+                return candidate
+        return f"{head}{style_tokens(style, casting, budget=1)}{tail}"
     moves = style.camera.moves or ["static"]
     topic = brief.topic
     shots: list[Shot] = []
@@ -118,6 +157,15 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
     hook_shot_sec = round(style.hook_style.window_sec / hook_cuts, 2)
     for i in range(hook_cuts):
         move = moves[i % len(moves)]
+        hook_scene = (
+            f"{hook.selected.visual}. Subject of: {topic}. "
+            f"{style.hook_style.shot_size} shot, {move}. {tokens}. "
+            "Opening shot of a short-form video, immediately legible."
+        )
+        hook_motion = (
+            f"{move}, fast and attention-grabbing. "
+            "No text or captions rendered in the footage."
+        )
         shots.append(
             Shot(
                 index=len(shots),
@@ -134,15 +182,8 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                 # for byte-identical imagery, so a "2-cut hook" is one frame shown
                 # twice and the cut is invisible -- which also made it undetectable
                 # to the QC drift check.
-                scene_prompt=(
-                    f"{hook.selected.visual}. Subject of: {topic}. "
-                    f"{style.hook_style.shot_size} shot, {move}. {tokens}. "
-                    "Opening shot of a short-form video, immediately legible."
-                ),
-                motion_prompt=(
-                    f"{move}, fast and attention-grabbing. "
-                    "No text or captions rendered in the footage."
-                ),
+                scene_prompt=fit(hook_scene, hook_motion),
+                motion_prompt=hook_motion,
             )
         )
 
@@ -156,6 +197,13 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
         sizes = sizes_for(style, count, rng)
         for j in range(count):
             move = moves[(len(shots) + j) % len(moves)]
+            body_scene = (
+                f"{beat.content}. Subject of: {topic}. "
+                f"{sizes[j]} shot, {move}. {tokens}."
+            )
+            body_motion = (
+                f"{move}. No text or captions rendered in the footage."
+            )
             shots.append(
                 Shot(
                     index=len(shots),
@@ -165,14 +213,8 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                     camera_move=move,
                     action=beat.content,
                     caption=beat.content if j == 0 else "",
-                    scene_prompt=(
-                        f"{beat.content}. Subject of: {topic}. "
-                        f"{sizes[j]} shot, {move}. {tokens}."
-                    ),
-                    motion_prompt=(
-                        f"{move}. "
-                        "No text or captions rendered in the footage."
-                    ),
+                    scene_prompt=fit(body_scene, body_motion),
+                    motion_prompt=body_motion,
                 )
             )
 
