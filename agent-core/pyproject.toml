@@ -14,10 +14,6 @@ dependencies = [
     "numpy>=1.26",
 ]
 
-[project.optional-dependencies]
-# Only needed for STYLELOOM_VIDEO_PROVIDER=fal. Defaults are offline.
-fal = ["fal-client>=1.0"]
-
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

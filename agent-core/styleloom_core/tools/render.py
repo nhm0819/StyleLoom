@@ -125,9 +125,9 @@ def _render_per_shot(
         except Exception as exc:  # provider errors are expected and recoverable
             errors[shot.index] = f"{type(exc).__name__}: {exc}"
 
-    # The provider's ceiling wins over the setting: fal enforces a per-user
-    # concurrency limit per endpoint (Kling v3 defaults to 1) and exceeding it
-    # fails the whole run.
+    # The provider's ceiling wins over the setting: Kling's concurrency limit is
+    # a property of the account tier (1 on the entry plan) and exceeding it fails
+    # the whole run.
     workers = max(min(ctx.settings.max_concurrent_renders, ctx.video.max_concurrency), 1)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         list(pool.map(work, board.shots))
@@ -212,7 +212,7 @@ def render(ctx: Context, session: RunSession) -> RenderResult:
         raise ToolError(
             f"render_mode=multi_shot, but the {ctx.video.name!r} video provider "
             "cannot render several cuts in one generation. Use render_mode=per_shot, "
-            "or an endpoint that declares multi_prompt in configs/fal_models.yaml "
+            "or an endpoint that declares multi_prompt in configs/kling_models.yaml "
             "(run `styleloom models` to see which do)."
         )
 

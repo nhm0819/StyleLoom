@@ -67,7 +67,7 @@ def test_bundled_config_is_found_from_a_foreign_working_directory(tmp_path, monk
     monkeypatch.chdir(tmp_path)
     settings = Settings(data_dir=tmp_path / "data")
     assert settings.resolve_config(settings.archetypes_path).exists()
-    assert settings.resolve_config(settings.fal_models_path).exists()
+    assert settings.resolve_config(settings.kling_models_path).exists()
 
 
 def test_a_missing_config_file_says_where_it_looked(tmp_path):
@@ -98,18 +98,18 @@ def test_the_core_declares_no_framework_dependency():
 
 def test_conventional_key_names_are_accepted(monkeypatch, tmp_path):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-conventional")
-    monkeypatch.setenv("FAL_KEY", "fal-conventional")
+    monkeypatch.setenv("KLING_SECRET_KEY", "kling-conventional")
     settings = Settings(data_dir=tmp_path)
     assert settings.anthropic_api_key == "sk-conventional"
-    assert settings.fal_key == "fal-conventional"
+    assert settings.kling_secret_key == "kling-conventional"
 
 
 def test_namespaced_key_names_are_also_accepted(monkeypatch, tmp_path):
     monkeypatch.setenv("STYLELOOM_ANTHROPIC_API_KEY", "sk-namespaced")
-    monkeypatch.setenv("STYLELOOM_FAL_KEY", "fal-namespaced")
+    monkeypatch.setenv("STYLELOOM_KLING_SECRET_KEY", "kling-namespaced")
     settings = Settings(data_dir=tmp_path)
     assert settings.anthropic_api_key == "sk-namespaced"
-    assert settings.fal_key == "fal-namespaced"
+    assert settings.kling_secret_key == "kling-namespaced"
 
 
 def test_namespaced_key_wins_over_the_conventional_one(monkeypatch, tmp_path):
@@ -126,10 +126,10 @@ def test_auto_falls_back_to_mock_without_keys(tmp_path):
 
 def test_auto_selects_the_real_provider_once_a_key_appears(monkeypatch, tmp_path):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-x")
-    monkeypatch.setenv("FAL_KEY", "fal-x")
+    monkeypatch.setenv("KLING_SECRET_KEY", "kling-x")
     settings = Settings(data_dir=tmp_path)
     assert settings.resolved_llm_provider() == "anthropic"
-    assert settings.resolved_video_provider() == "fal"
+    assert settings.resolved_video_provider() == "kling"
 
 
 def test_an_explicit_provider_overrides_auto_detection(monkeypatch, tmp_path):
@@ -153,8 +153,10 @@ def test_auto_is_a_valid_provider_value(tmp_path):
 
 def test_keys_can_still_be_passed_directly(tmp_path):
     """Regression: adding `validation_alias` to the key fields made pydantic accept
-    only the alias, so `Settings(fal_key=...)` silently evaluated to "" with no
+    only the alias, so `Settings(kling_secret_key=...)` silently evaluated to "" with no
     exception. populate_by_name=True restores it."""
-    settings = Settings(data_dir=tmp_path, fal_key="direct-fal", anthropic_api_key="direct-sk")
-    assert settings.fal_key == "direct-fal"
+    settings = Settings(
+        data_dir=tmp_path, kling_secret_key="direct-kling", anthropic_api_key="direct-sk"
+    )
+    assert settings.kling_secret_key == "direct-kling"
     assert settings.anthropic_api_key == "direct-sk"

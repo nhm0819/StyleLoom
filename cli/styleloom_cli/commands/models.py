@@ -8,7 +8,15 @@ How much depends on the style's own shot count, which is why this reads a saved
 
 It also shows what `multi_prompt` would cost on endpoints that support it, since
 that is the difference between paying for the footage you use and paying for the
-floor. Nothing here calls an API; it is arithmetic over configs/fal_models.yaml.
+floor.
+
+Reported in billed seconds rather than dollars. The official platform bills
+credits against a subscription tier and publishes no per-second rate this file
+could record, so a currency column would be empty on every row. Billed seconds
+are the part of the arithmetic that does not depend on the price list: they are
+what the plan is charged for, and the wasted share is what the pacing costs.
+
+Nothing here calls an API; it is arithmetic over configs/kling_models.yaml.
 """
 
 from __future__ import annotations
@@ -19,7 +27,7 @@ from typing import Annotated
 
 import typer
 from styleloom_core import StyleLoomError
-from styleloom_core.providers.video import load_fal_specs
+from styleloom_core.providers.kling import load_kling_specs
 
 from ..options import abort, make_context
 
@@ -36,20 +44,15 @@ def shot_plan(total_sec: float, avg_shot_sec: float) -> tuple[int, float]:
     return shots, total_sec / shots
 
 
-def per_shot_cost(spec: dict, shots: int, shot_sec: float) -> tuple[float, float] | None:
-    """Cost and billed seconds for one generation per shot, at the endpoint floor."""
-    rate = spec.get("price_per_sec")
-    if rate is None:
-        return None
-    billed_per_shot = max(shot_sec, float(spec.get("min_duration", 0)))
-    billed = shots * billed_per_shot
-    return billed * float(rate), billed
+def billed_per_shot_sec(spec: dict, shots: int, shot_sec: float) -> float:
+    """Billed seconds for one generation per shot, at the endpoint floor."""
+    return shots * max(shot_sec, float(spec.get("min_duration", 0)))
 
 
-def multi_prompt_cost(
+def multi_prompt_billed_sec(
     spec: dict, total_sec: float, shots: int
-) -> tuple[float, float, int] | None:
-    """Cost, billed seconds and generation count using a multi-shot request.
+) -> tuple[float, int] | None:
+    """Billed seconds and generation count using a multi-shot request.
 
     Two corrections over the naive version, both from the verified Kling schema:
 
@@ -61,8 +64,7 @@ def multi_prompt_cost(
       the delivered length -- multi_prompt removes the endpoint's 3s floor, not
       arithmetic.
     """
-    rate = spec.get("price_per_sec")
-    if rate is None or "multi_prompt" not in (spec.get("capabilities") or []):
+    if "multi_prompt" not in (spec.get("capabilities") or []):
         return None
     window = float(spec.get("max_shot_window_sec") or spec.get("max_duration", total_sec))
     max_shots = int(spec.get("max_shots_per_request", 0))
@@ -76,7 +78,7 @@ def multi_prompt_cost(
     by_time = math.ceil(billed / window) if window > 0 else 1
     by_count = math.ceil(shots / max_shots) if max_shots > 0 else 1
     generations = max(by_time, by_count, 1)
-    return billed * float(rate), billed, generations
+    return billed, generations
 
 
 @app.command("models")
@@ -86,7 +88,7 @@ def models(
 ) -> None:
     """엔드포인트별 스펙과 이 스타일 1편당 예상 비용을 출력합니다."""
     ctx = make_context(data_dir=data_dir, quiet=True)
-    specs = load_fal_specs(ctx.settings)
+    specs = load_kling_specs(ctx.settings)
 
     if style:
         try:
@@ -105,28 +107,25 @@ def models(
     typer.echo(f"  {total:.1f}s total, {shots} shots at ~{shot_sec:.2f}s each\n")
 
     source = specs.get("pricing_source", "unknown")
-    current = ctx.settings.fal_i2v_model
+    current = ctx.settings.kling_i2v_model
 
     rows: list[tuple[str, str, str, str, str, bool]] = []
     for model_id, spec in specs.get("image_to_video", {}).items():
         floor = spec.get("min_duration", "?")
         elo = spec.get("quality_elo")
-        caps = spec.get("capabilities") or []
+        billed = billed_per_shot_sec(spec, shots, shot_sec)
+        waste = (1 - total / billed) * 100 if billed else 0.0
+        per_shot_text = f"{billed:.0f}s billed  ({waste:.0f}% wasted)"
 
-        shot_mode = per_shot_cost(spec, shots, shot_sec)
-        if shot_mode is None:
-            per_shot_text = "rate not recorded"
-        else:
-            cost, billed = shot_mode
-            waste = (1 - total / billed) * 100
-            per_shot_text = f"${cost:,.2f}  ({waste:.0f}% wasted)"
-
-        multi = multi_prompt_cost(spec, total, shots)
+        multi = multi_prompt_billed_sec(spec, total, shots)
         if multi is None:
-            multi_text = "not supported" if "multi_prompt" not in caps else "rate not recorded"
+            multi_text = "not supported"
         else:
-            cost, _billed, generations = multi
-            multi_text = f"${cost:,.2f}  ({generations} call{'s' if generations > 1 else ''})"
+            billed_multi, generations = multi
+            plural = "s" if generations > 1 else ""
+            multi_text = (
+                f"{billed_multi:.0f}s billed  ({generations} call{plural})"
+            )
 
         rows.append(
             (
@@ -141,7 +140,7 @@ def models(
 
     width = max(len(r[0]) for r in rows)
     header = (
-        f"  {'endpoint':<{width}}  {'floor':>5}  {'elo':>5}  "
+        f"  {'model_name':<{width}}  {'floor':>5}  {'elo':>5}  "
         f"{'per-shot (today)':<26}  multi_prompt"
     )
 

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from ..config import Settings
 from ..context import Context, new_run_id
-from ..errors import NotFoundError
+from ..errors import NotFoundError, ToolError
 from ..events import EventKind
 from ..planner import Plan, build_plan
 from ..schema import AssembleResult, RunInputs, RunRecord, RunStatus
@@ -74,6 +74,21 @@ def prepare_session(
     a later hand-edit of style.json cannot silently change what a past run meant.
     """
     inputs = resolve_inputs(ctx.settings, inputs)
+    if inputs.persona_ref is not None and not ctx.video.supports_persona:
+        # Checked here, not where the payload is built. The payload builder
+        # refuses too -- that is the invariant -- but by then casting has run and
+        # the first keyframes are already billed. This is the last point before
+        # any provider call.
+        #
+        # Refused rather than warned-and-dropped: the caller passed a specific
+        # face on purpose, and a run that quietly ignores it still produces a
+        # perfectly watchable video in which the creator is someone else.
+        raise ToolError(
+            f"--persona was given, but the {ctx.video.name!r} video provider "
+            "cannot consume a reference image, so the creator in the output would "
+            "not be the person in that file. Run without --persona, or switch to a "
+            "provider that declares support."
+        )
     style: StyleSchema = ctx.styles.load(style_id)  # raises NotFoundError
     record = RunRecord(run_id=run_id or new_run_id(), style_id=style_id)
     ctx.runs.save(record)

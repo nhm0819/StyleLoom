@@ -291,10 +291,17 @@ def test_models_marks_the_current_default(env):
     assert "current default" in result.output
 
 
-def test_models_declines_to_invent_a_missing_rate(env):
-    """A guessed price is worse than no price when someone is budgeting."""
+def test_models_reports_billed_seconds_and_no_invented_price(env):
+    """A guessed price is worse than no price when someone is budgeting.
+
+    The official platform bills credits against a subscription and publishes no
+    per-second rate this repo could record, so the report is in billed seconds --
+    the part of the arithmetic that does not depend on a price list. A currency
+    figure appearing here would mean someone had filled one in from a reseller.
+    """
     result = runner.invoke(app, ["models"])
-    assert "rate not recorded" in result.output
+    assert "billed" in result.output
+    assert "$" not in result.output
 
 
 def test_models_on_a_missing_style_is_a_clean_error(env):

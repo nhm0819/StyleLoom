@@ -104,7 +104,7 @@ variables take precedence over the file either way, so `-e ANTHROPIC_API_KEY` st
 overrides:
 
 ```bash
-docker run --rm -e ANTHROPIC_API_KEY -e FAL_KEY \
+docker run --rm -e ANTHROPIC_API_KEY -e KLING_ACCESS_KEY -e KLING_SECRET_KEY \
   -v "$PWD/data:/app/data" \
   styleloom run my_style --text "..."
 ```
@@ -364,9 +364,8 @@ two; the hook *text* differs every time. For guaranteed variety set
 
 ### Render mode: `per_shot` or `multi_shot`
 
-Every image-to-video endpoint bills a minimum clip length — 3s on Kling, 4s on
-Seedance — while short-form cuts run 1–2s. There are two ways to live with that,
-and the choice is yours:
+Image-to-video bills a minimum clip length — 3s on Kling v3 — while short-form
+cuts run 1–2s. There are two ways to live with that, and the choice is yours:
 
 ```bash
 styleloom run my_style -t "..." --render-mode multi_shot
@@ -495,9 +494,9 @@ anywhere**, and the repo runs end to end without any.
 | Variable | Where to get it | What it is used for | Without it |
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API keys | Brief extraction, outline, hook candidates, naming the reference's grade and tone | Offline `mock` LLM: real structure, placeholder wording |
-| `FAL_KEY` | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) | Keyframes (Flux 2) and image-to-video (Kling / Seedance) | ffmpeg `mock` renderer: real MP4s, gradient footage |
+| `KLING_ACCESS_KEY` + `KLING_SECRET_KEY` | [kling.ai/dev](https://kling.ai/dev) → console → API keys | Keyframes (Kling Image) and image-to-video (Kling Video) | ffmpeg `mock` renderer: real MP4s, gradient footage |
 
-Both are also accepted as `STYLELOOM_ANTHROPIC_API_KEY` / `STYLELOOM_FAL_KEY`, which
+All three are also accepted as `STYLELOOM_ANTHROPIC_API_KEY`, `STYLELOOM_KLING_ACCESS_KEY` and `STYLELOOM_KLING_SECRET_KEY`, which
 win if both forms are set.
 
 **Providers default to `auto`**: each uses the real service when its key is present
@@ -505,14 +504,11 @@ and the offline mock when it is not. Injecting a key is the only step — there 
 second variable to remember. Every run prints its resolution before doing any work:
 
 ```
-providers: llm=anthropic (auto) video=fal (auto) render=per_shot
+providers: llm=anthropic (auto) video=kling (auto) render=per_shot
 ```
 
-Real video also needs the optional client:
-
-```bash
-pip install 'styleloom-core[fal]'
-```
+Real video needs no extra install. The Kling provider signs its own JWT and posts
+with `httpx`, both already dependencies — there is no SDK to add.
 
 To pin a provider regardless of keys — offline testing on a keyed machine — set
 `STYLELOOM_LLM_PROVIDER=mock` or `STYLELOOM_VIDEO_PROVIDER=mock`.
@@ -524,10 +520,14 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 | `STYLELOOM_DATA_DIR` | `data` | Styles, runs and uploads live here |
 | `STYLELOOM_LLM_PROVIDER` | `auto` | `auto` \| `mock` \| `anthropic` |
 | `STYLELOOM_LLM_MODEL` | `claude-sonnet-5` | |
-| `STYLELOOM_VIDEO_PROVIDER` | `auto` | `auto` \| `mock` \| `fal` |
-| `STYLELOOM_FAL_T2I_MODEL` | `fal-ai/flux/dev` | a fal **endpoint ID**, not a URL. Must be a key in `configs/fal_models.yaml` |
-| `STYLELOOM_FAL_I2V_MODEL` | `fal-ai/kling-video/v3/standard/image-to-video` | ditto. `styleloom models` prices the alternatives |
-| `STYLELOOM_FAL_TIMEOUT_SEC` | `600` | Per generation |
+| `STYLELOOM_VIDEO_PROVIDER` | `auto` | `auto` \| `mock` \| `kling` |
+| `STYLELOOM_KLING_T2I_MODEL` | `kling-v3` | a `model_name` sent in the body, not a URL segment. Must be a key in `configs/kling_models.yaml` |
+| `STYLELOOM_KLING_I2V_MODEL` | `kling-v3` | ditto. `styleloom models` compares the alternatives |
+| `STYLELOOM_KLING_MODE` | `std` | `std` \| `pro`. The quality tier, which is a request field here rather than a separate endpoint |
+| `STYLELOOM_KLING_BASE_URL` | `https://api-singapore.klingai.com` | International account system. `api-beijing.klingai.com` is a different account, not a region |
+| `STYLELOOM_KLING_TIMEOUT_SEC` | `900` | Covers queue time as well as inference |
+| `STYLELOOM_KLING_POLL_INTERVAL_SEC` | `5` | Generation is asynchronous |
+| `STYLELOOM_KLING_MAX_CONCURRENCY` | `1` | An account-tier property, so it cannot be recorded per model |
 | `STYLELOOM_RENDER_MODE` | `per_shot` | `per_shot` \| `multi_shot` |
 | `STYLELOOM_WIDTH` / `_HEIGHT` / `_FPS` | `720` / `1280` / `30` | Vertical 9:16 by default |
 | `STYLELOOM_HOOK_CANDIDATE_COUNT` | `5` | Candidates per hook generation |
@@ -538,64 +538,70 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 | `STYLELOOM_MAX_CONCURRENT_RENDERS` | `3` | Upper bound; endpoint limits clamp it down |
 | `STYLELOOM_ARCHETYPES_PATH` | `configs/archetypes.yaml` | Hook archetype pool |
 | `STYLELOOM_CASTING_PATH` | `configs/casting.yaml` | Creator and background pools |
-| `STYLELOOM_FAL_MODELS_PATH` | `configs/fal_models.yaml` | Endpoint specs |
+| `STYLELOOM_KLING_MODELS_PATH` | `configs/kling_models.yaml` | Endpoint specs |
 
 Config files fall back to the copies bundled in the repo, so a fresh clone runs from
 any working directory.
 
-### The two `FAL_*_MODEL` values are endpoint IDs
+### The `KLING_*_MODEL` values are `model_name`s, not URL segments
 
-They read like URLs but are not. A fal endpoint ID is the path fal appends to
-`https://fal.run/`, so `fal-ai/kling-video/v3/pro/image-to-video` posts to
-`https://fal.run/fal-ai/kling-video/v3/pro/image-to-video`. The slashes are fal's
-namespace (`vendor/model/tier/task`), which is why the string is long. Both
-defaults have a model page under `https://fal.ai/models/<endpoint-id>`.
+The official API has one path per capability and picks the model in the request
+body, so the setting is short and the path is a field in
+`configs/kling_models.yaml`:
 
-Nothing here talks to KlingAI's own Open Platform (`kling.ai/document-api`). That
-is a separate service with its own auth and its own parameter names — Kling calls
-the start frame `image` and the shot list `multi_shot`, fal's v3 endpoints call
-them `start_image_url` and `multi_prompt`. Pasting a Kling model name or a docs
-URL into `STYLELOOM_FAL_I2V_MODEL` fails at startup, because the provider checks
-the value against the keys of `configs/fal_models.yaml` before doing any work.
+```
+POST https://api-singapore.klingai.com/v1/videos/image2video
+{"model_name": "kling-v3", "mode": "std", "image": "<raw base64>", ...}
+```
 
-**`v3` versus `o3`, since Kling's own docs treat them as one page.** fal splits
-Kling 3.0 into two endpoint families:
+An unrecognised name fails at startup rather than at the first request, because
+the provider checks it against the registry before doing any work.
 
-| fal family | Kling name | start frame | why it matters here |
-|---|---|---|---|
-| `kling-video/v3/*` | Kling 3.0 | `start_image_url` | the default. Carries `elements` and `multi_prompt` |
-| `kling-video/o3/*` | Kling 3.0 Omni (Kling O3) | `image_url`, plus `end_image_url` | reference-heavy tier. Its image-to-video schema does not list `elements` |
+**`kling-v3` versus `kling-v3-omni` are different paths.** Kling's own docs
+present 3.0 and 3.0 Omni on one page, and fal's naming hid the split further by
+putting both under `kling-video/{v3,o3}/…` with one call shape. Officially they
+are separate endpoints:
 
-`elements` is the character-reference path, so it is what keeps the cast creator
-the same person across cuts — which is why the default is a `v3` endpoint rather
-than the Omni family. That is a capability decision and not a price one:
-`o3/standard` costs the same $0.084/s. Both families share one concurrency alias
-(`fal-ai/kling-video-v3`), so the 1-per-user limit applies across both.
+| `model_name` | path | |
+|---|---|---|
+| `kling-v3` | `/v1/videos/image2video` | the default |
+| `kling-v3-omni` | `/v1/videos/omni-video/` | reference-driven tier |
 
-### Both defaults are the cheapest endpoint that does the job
+### What the move off fal cost, and what it bought
 
-The default is what an evaluation run costs, so neither default is the premium
-tier. Rates read off the fal model pages on 2026-07-28:
+**Cost: the creator-reference path is not wired up.** On fal a persona was one
+inline field, `elements: [{frontal_image_url}]`. The official API references
+elements by id — `element_list: [{element_id}]` plus `<<<element_1>>>` in the
+prompt — and the id comes from a separate Element Management endpoint whose
+request schema is not verified here. So `supports_persona` is `false` on every
+specced endpoint, and passing `--persona` raises rather than being ignored: a
+silently dropped reference renders a perfectly good video in which the creator's
+face changes between cuts, which is the exact failure this harness exists to
+catch. Creator identity still carries through the keyframe, which is generated
+from a prompt describing the cast creator. That is the weaker mechanism, not none.
 
-| | endpoint | rate | |
-|---|---|---|---|
-| t2i | **`fal-ai/flux/dev`** | $0.025/MP | default |
-| | `fal-ai/flux-2-flex` | $0.06/MP | better typography, multi-image references |
-| i2v | **`fal-ai/kling-video/v3/standard/image-to-video`** | $0.084/s | default |
-| | `fal-ai/kling-video/v3/pro/image-to-video` | $0.112/s | same parameters, same 3s floor |
-| | `bytedance/seedance-2.0/image-to-video` | $0.303/s | highest Elo, 4s floor, no `elements` |
+**Bought: one account, one credential pair, no SDK.** Keyframes come from Kling
+Image and motion from Kling Video, so there is no second vendor to hold a key
+for. Images upload as raw Base64 in the request body, so there is no CDN step.
+And the JWT is twelve lines of `hmac`, so the optional `[fal]` extra is gone —
+`pip install -e agent-core` reaches real generation.
 
-Kling v3 Standard and Pro take an identical request and have the same floor, so
-Pro buys output quality and nothing the pipeline depends on. The keyframe is the
-i2v start image rather than a deliverable, and FLUX.2 [flex]'s advantages over
-FLUX.1 [dev] are typography and reference images — this pipeline burns its text
-with ffmpeg and passes the creator reference to Kling's `elements`, so it uses
-neither.
+**Neither: price.** The official platform bills credits against a subscription
+tier rather than dollars per second, and the per-second credit rates live in a
+PDF-style user guide this repo could not read. So `styleloom models` reports
+billed seconds and the wasted share — the part of the arithmetic that does not
+depend on a price list — and prints no currency figure rather than copying a
+reseller's rate:
 
-`styleloom models --style <id>` prices all of them against a real shot count
-before anything is spent. And with no `FAL_KEY` at all the pipeline runs end to
-end on the mock video provider for $0, which is the cheapest way to test
-everything except generation quality.
+```
+  model_name     floor    elo  per-shot (today)            multi_prompt
+* kling-v3          3s      -  42s billed  (75% wasted)    14s billed  (3 calls)
+  kling-v3-omni     3s      -  42s billed  (75% wasted)    14s billed  (3 calls)
+```
+
+With no Kling credentials at all the pipeline runs end to end on the mock video
+provider for nothing, which is still the cheapest way to test everything except
+generation quality.
 
 ---
 
@@ -612,7 +618,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-211 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+221 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting
@@ -621,10 +627,13 @@ full run producing a playable MP4 with one artifact per stage, three batched inp
 diverging, both render modes producing the same shape of output, and failure
 isolating to the stage that broke.
 
-`test_fal_provider.py` stubs the fal SDK and asserts the payload *shape* per
-endpoint, which is the part that silently breaks: Seedance takes `image_url`, Kling
-takes `start_image_url`, `duration` is a string on both, and Kling infers aspect
-ratio from the start image so sending one is wrong.
+`test_kling_provider.py` asserts the payload *shape* per endpoint without a key
+or a network, because that is the part that breaks silently: `multi_shot` and
+`shot_type` must accompany `multi_prompt` or the storyboard is quietly one shot,
+the top-level `prompt` becomes invalid once they are set, shot entries are ordered
+by an `index` field rather than array position, and `duration` is a bare string.
+It also checks the hand-rolled JWT against an independently computed HMAC rather
+than against a stored token, so the test fails if the encoding drifts.
 
 Regression tests exist for bugs found during development:
 
@@ -803,16 +812,22 @@ Two alternatives, neither needed if the above works:
 - **Caption timing is per shot, not per beat.** Captions land at shot boundaries.
   Beat-level timing would need `pacing.cut_times` and the estimated BPM wired into
   `assemble`; neither is done, so the schema does not pretend otherwise.
-- **Creator consistency is best-effort, and only on Kling v3** via its `elements`
-  parameter. On Seedance the provider warns and proceeds rather than silently
-  dropping the reference. Offline the creator varies through prompt tokens only.
+- **Creator consistency currently rides on the keyframe alone.** The official
+  API takes a character reference as an `element_id` minted by a separate Element
+  Management endpoint, whose request schema is not verified here, so
+  `supports_persona` is `false` and `--persona` raises rather than being dropped
+  in silence. Identity still carries through the keyframe prompt, which is the
+  weaker mechanism. Offline the creator varies through prompt tokens only.
 - **Runs are in-process.** `styleloom batch` blocks until done, and killing it loses
   the current run — earlier completed runs are already on disk. Fine for a
   single-operator harness.
-- **fal endpoint schemas are pinned to July 2026.** They are data
-  (`configs/fal_models.yaml`), not code, but they do go stale — if a request starts
-  failing on a parameter name, check the model page before the code. One field is
-  flagged in that file as inferred rather than verified.
+- **Kling endpoint schemas are pinned to July 2026, and some fields are
+  inferred.** They are data (`configs/kling_models.yaml`), not code, but they do go
+  stale — if a request starts failing on a parameter name, check the docs before
+  the code. Every value in that file is marked verified or unverified; the
+  unverified ones are duration floors and enums, because `kling.ai/document-api`
+  renders client-side and only fragments that reached a search index were
+  readable.
 - **Reference videos are used for analysis only.** Extraction reads measurements and
   keyframes from them; no reference footage is ever placed in an output.
 - **`api/`, `worker/`, `infra/` and `observability/` are not implemented.** The seams

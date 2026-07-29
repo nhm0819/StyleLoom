@@ -44,10 +44,11 @@ COPY . /app
 #     (also tried /usr/local/lib/python3.12/configs/archetypes.yaml)
 # An editable install keeps REPO_ROOT at /app, where configs/ actually is.
 #
-# The [fal] extra is included so a FAL_KEY in .env is enough to reach real video
-# generation. Without it the provider cannot construct and the image is
+# No extras: the kling provider signs its own JWT and posts with httpx, so
+# KLING_ACCESS_KEY and KLING_SECRET_KEY in .env are enough to reach real video
+# generation. Without them the provider cannot construct and the image is
 # offline-only.
-RUN python -m pip install -e "agent-core[fal]" -e cli
+RUN python -m pip install -e agent-core -e cli
 
 # Runs write into data/. Root-owned output on a bind mount is a nuisance to clean
 # up from the host, so drop to a normal user. UID 1000 matches the usual first

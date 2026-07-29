@@ -92,7 +92,7 @@ def test_no_documented_setting_is_imaginary(readme):
 
 @pytest.mark.parametrize(
     "field",
-    ["llm_model", "fal_t2i_model", "fal_i2v_model", "render_mode", "llm_provider"],
+    ["llm_model", "kling_t2i_model", "kling_i2v_model", "render_mode", "llm_provider"],
 )
 def test_quoted_defaults_match_the_code(readme, field):
     """Stale defaults are worse than absent ones: `claude-sonnet-4-6` sat in the
@@ -121,7 +121,7 @@ def test_linked_docs_exist(readme):
         ".env.example",
         "configs/archetypes.yaml",
         "configs/casting.yaml",
-        "configs/fal_models.yaml",
+        "configs/kling_models.yaml",
         "agent-core",
         "cli",
     ],

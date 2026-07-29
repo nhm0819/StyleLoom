@@ -21,8 +21,9 @@ from .errors import ConfigError
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 LLM_PROVIDERS = ("auto", "mock", "anthropic")
-VIDEO_PROVIDERS = ("auto", "mock", "fal")
+VIDEO_PROVIDERS = ("auto", "mock", "kling")
 RENDER_MODES = ("per_shot", "multi_shot")
+KLING_MODES = ("std", "pro")
 
 
 class Settings(BaseSettings):
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
         env_file=".env",
         extra="ignore",
         # Required because the key fields carry a validation_alias. Without it,
-        # pydantic accepts *only* the alias, so `Settings(fal_key="x")` silently
+        # pydantic accepts *only* the alias, so `Settings(kling_secret_key="x")` silently
         # yields "" -- no exception, just a wrong value. Every programmatic caller
         # and every test that injects a key directly depends on this.
         populate_by_name=True,
@@ -39,7 +40,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path("data")
     archetypes_path: Path = Path("configs/archetypes.yaml")
-    fal_models_path: Path = Path("configs/fal_models.yaml")
+    kling_models_path: Path = Path("configs/kling_models.yaml")
     casting_path: Path = Path("configs/casting.yaml")
 
     # --- LLM (planning, hook generation, style synthesis) -------------------
@@ -61,31 +62,46 @@ class Settings(BaseSettings):
     )
 
     # --- Video (keyframe + image-to-video) ---------------------------------
-    video_provider: str = "auto"  # auto | mock | fal
-    fal_key: str = Field(
+    video_provider: str = "auto"  # auto | mock | kling
+    # Two halves of one credential: the access key is public and travels in the
+    # token, the secret key never leaves the process and signs it.
+    kling_access_key: str = Field(
         default="",
-        validation_alias=AliasChoices("STYLELOOM_FAL_KEY", "FAL_KEY"),
+        validation_alias=AliasChoices("STYLELOOM_KLING_ACCESS_KEY", "KLING_ACCESS_KEY"),
     )
-    # Must be keys in configs/fal_models.yaml -- the provider validates on init.
+    kling_secret_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("STYLELOOM_KLING_SECRET_KEY", "KLING_SECRET_KEY"),
+    )
+    # api-singapore is the international account system. api-beijing.klingai.com
+    # is the mainland one -- a separate account, not a region of the same one, so
+    # switching hosts also means switching credentials.
+    kling_base_url: str = "https://api-singapore.klingai.com"
+    # `model_name` values, which must be keys in configs/kling_models.yaml -- the
+    # provider validates both on construction rather than at the first request.
     #
-    # Both defaults are the cheapest endpoint that still does the job, because the
-    # default is what an evaluation run costs.
-    #
-    # i2v: Kling v3 Standard, $0.084/s. Its request type carries `elements` and
-    # `multi_prompt` exactly like Pro at $0.112/s -- same parameters, same floor,
-    # 25% less. Those two capabilities are why the default is Kling at all rather
-    # than the higher-scoring Seedance 2.0: `elements` is the only character
-    # reference here, so it keeps the cast creator the same person across cuts,
-    # and `multi_prompt` is the only way to get per-shot durations without paying
-    # the per-shot floor. Pro buys output quality, not capability -- switch up for
-    # a hero video. See docs/TOOL_RATIONALE.md.
-    #
-    # t2i: FLUX.1 [dev], $0.025/MP against FLUX.2 [flex]'s $0.06/MP. Keyframes are
-    # the i2v start image, not a deliverable, and flex's advantages over dev are
-    # typography and multi-image references -- neither of which this pipeline uses.
-    fal_t2i_model: str = "fal-ai/flux/dev"
-    fal_i2v_model: str = "fal-ai/kling-video/v3/standard/image-to-video"
-    fal_timeout_sec: float = 600.0
+    # kling-v3 for both stages, so the whole pipeline runs on one account. The
+    # Omni variant (kling-v3-omni) is the reference-driven tier, but it lives on a
+    # different path and its advantage is elements, which are not wired up yet.
+    kling_t2i_model: str = "kling-v3"
+    kling_i2v_model: str = "kling-v3"
+
+    # The quality tier, which on the official API is a request field rather than
+    # part of the endpoint. `std` is the default because the default is what an
+    # evaluation run costs; `pro` is the same parameters at a higher rate.
+    kling_mode: str = "std"  # std | pro
+
+    # Generation is asynchronous, so these two bound a wait rather than a request.
+    # The timeout is generous because it covers queue time as well as inference:
+    # a 15s multi-shot job behind a busy queue is minutes, and giving up early
+    # abandons a task that has already been billed.
+    kling_timeout_sec: float = 900.0
+    kling_poll_interval_sec: float = 5.0
+
+    # Not spec data, unlike the fal registry it replaces: Kling's concurrency
+    # ceiling is a property of the account tier, so the same endpoint allows more
+    # parallel tasks on a larger plan and no per-model value could be correct.
+    kling_max_concurrency: int = 1
 
     # --- Output ------------------------------------------------------------
     width: int = 720
@@ -128,7 +144,7 @@ class Settings(BaseSettings):
     def resolved_video_provider(self) -> str:
         if self.video_provider != "auto":
             return self.video_provider
-        return "fal" if self.fal_key else "mock"
+        return "kling" if self.kling_secret_key else "mock"
 
     def provider_summary(self) -> str:
         def fmt(requested: str, resolved: str) -> str:
@@ -216,6 +232,13 @@ class Settings(BaseSettings):
             raise ConfigError(
                 f"unknown render_mode: {self.render_mode!r}. "
                 f"Expected one of {RENDER_MODES}."
+            )
+        # Checked here rather than left to the API: `mode` is the price tier, and
+        # an unrecognised value is the kind of typo that is cheaper to catch now.
+        if self.kling_mode not in KLING_MODES:
+            raise ConfigError(
+                f"unknown kling_mode: {self.kling_mode!r}. "
+                f"Expected one of {KLING_MODES}."
             )
         if self.hook_candidate_count < 1:
             raise ConfigError("hook_candidate_count must be >= 1")

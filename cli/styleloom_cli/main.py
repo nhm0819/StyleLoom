@@ -96,24 +96,28 @@ def doctor(
         )
 
     line(True, "video provider", video_provider)
+    # Both halves are reported separately: supplying one and forgetting the other
+    # is the likely mistake, and "credentials missing" would not say which.
     line(
-        bool(settings.fal_key),
-        "  fal key",
-        "detected" if settings.fal_key else "not set -- FAL_KEY or STYLELOOM_FAL_KEY",
+        bool(settings.kling_access_key),
+        "  kling access key",
+        "detected" if settings.kling_access_key else "not set -- KLING_ACCESS_KEY",
     )
-    if settings.fal_key and video_provider != "fal":
+    line(
+        bool(settings.kling_secret_key),
+        "  kling secret key",
+        "detected" if settings.kling_secret_key else "not set -- KLING_SECRET_KEY",
+    )
+    if settings.kling_secret_key and video_provider != "kling":
         typer.secho(
             "      key is present but video_provider is pinned to "
             f"{settings.video_provider!r}. Unset STYLELOOM_VIDEO_PROVIDER to use it.",
             fg="yellow",
         )
-    if video_provider == "fal":
-        try:
-            import fal_client  # noqa: F401
-
-            line(True, "  fal-client", "installed")
-        except ImportError:
-            line(False, "  fal-client", "pip install 'styleloom-core[fal]'")
+    if video_provider == "kling":
+        line(True, "  kling host", settings.kling_base_url)
+        line(True, "  kling models", f"{settings.kling_t2i_model} / "
+             f"{settings.kling_i2v_model} ({settings.kling_mode})")
 
     if llm_provider == "mock" or video_provider == "mock":
         typer.secho(
@@ -124,7 +128,7 @@ def doctor(
 
     for label, path in (
         ("archetypes", settings.archetypes_path),
-        ("fal models", settings.fal_models_path),
+        ("kling models", settings.kling_models_path),
         ("casting pool", settings.casting_path),
     ):
         try:

@@ -51,7 +51,7 @@ def run(
     no_qc: Annotated[bool, typer.Option("--no-qc", help="정합성 검사 생략")] = False,
     data_dir: Annotated[Path | None, typer.Option("--data-dir")] = None,
     llm: Annotated[str | None, typer.Option(help="mock | anthropic")] = None,
-    video: Annotated[str | None, typer.Option(help="mock | fal")] = None,
+    video: Annotated[str | None, typer.Option(help="mock | kling")] = None,
     render_mode: Annotated[
         str | None,
         typer.Option(
@@ -89,7 +89,7 @@ def batch(
     no_qc: Annotated[bool, typer.Option("--no-qc")] = False,
     data_dir: Annotated[Path | None, typer.Option("--data-dir")] = None,
     llm: Annotated[str | None, typer.Option(help="mock | anthropic")] = None,
-    video: Annotated[str | None, typer.Option(help="mock | fal")] = None,
+    video: Annotated[str | None, typer.Option(help="mock | kling")] = None,
     render_mode: Annotated[
         str | None,
         typer.Option(

@@ -6,8 +6,9 @@ subpackage of it.
 """
 
 from .base import BaseLLM, BaseVideoProvider, MotionShot
+from .kling import KlingVideoProvider, encode_jwt, load_kling_specs
 from .llm import AnthropicLLM, MockLLM, build_llm, extract_json
-from .video import FalVideoProvider, MockVideoProvider, build_video_provider, load_fal_specs
+from .video import MockVideoProvider, build_video_provider
 
 __all__ = [
     "BaseLLM",
@@ -17,8 +18,9 @@ __all__ = [
     "MockLLM",
     "build_llm",
     "extract_json",
-    "FalVideoProvider",
+    "KlingVideoProvider",
     "MockVideoProvider",
     "build_video_provider",
-    "load_fal_specs",
+    "load_kling_specs",
+    "encode_jwt",
 ]

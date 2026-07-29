@@ -9,10 +9,9 @@ Why each choice was made, including the alternatives that were rejected.
 | **ffmpeg** | cut, trim, concat, burn captions | Cut timing and caption position are deterministic operations; a model does them worse than a `for` loop and gives up reproducibility. |
 | **OpenCV** | measure pacing, colour, keyframes | Style properties have to be numbers to be reproducible *and* checkable in QC. One decode pass yields cuts, colour stats and keyframes together. |
 | **Claude Sonnet 5** (Anthropic) | brief, outline, hook candidates, style naming | Vision-capable, so reference keyframes go in alongside the measured stats; reliable structured JSON under an explicit schema. |
-| **fal.ai** | keyframe + image-to-video | Fronts Seedance, Kling and others behind one queue API, so one implementation covers several frontier models as they turn over. |
-| **Flux 2 Flex** (via fal) | text-to-image keyframes | Takes an `image_size` object, so 9:16 is requested directly rather than cropped afterwards. |
-| **Kling v3 Pro** (via fal) | image-to-video, **default** | The only endpoint here with a character reference (`elements`) *and* `multi_prompt`. At $0.112/s it is a third of Seedance's rate. |
-| **Seedance 2.0** (via fal) | image-to-video, quality tier | Ranks first on the Artificial Analysis image-to-video board. Costs ~7x the default per video and cannot hold a character reference. |
+| **KlingAI Open Platform** | keyframe + image-to-video | Called directly rather than through an aggregator. One vendor account covers both stages, and `multi_shot` — the storyboard that lowers the billed floor from 3s to 1s per cut — is a first-class part of its own schema rather than a wrapper's translation of it. |
+| **Kling Image v3** | text-to-image keyframes | Same account as the video model. Takes `aspect_ratio` rather than pixel dimensions, so 9:16 is requested directly rather than cropped afterwards. |
+| **Kling Video v3** | image-to-video, **default** | `multi_shot` storyboards, 3s floor, 15s ceiling. `mode: std\|pro` selects the quality tier in the request, so switching tiers is a setting rather than a different endpoint. |
 | **pydantic** | data contracts, settings | Every stage artifact is written to disk and read back; validation at the boundary is the contract. Env-driven settings come free. |
 | **Typer** | CLI | Type hints *are* the parser, so the command signature and its validation are one declaration instead of two. |
 | **pytest** | tests | 137 tests, no network, no keys. |
@@ -166,12 +165,34 @@ with the correct shot count, durations and captions. The full pipeline — inclu
 QC — is therefore verifiable by anyone who clones the repo, which matters more than
 the mock footage being pretty.
 
-**fal.ai** was chosen for the one real integration because it fronts several video
-models behind one queue API, so a single implementation covers Seedance, Kling and
-others. It also means changing model is an endpoint string, which is the property
-that makes the comparison below actionable rather than academic.
+**KlingAI's own Open Platform** is the one real integration. An earlier revision
+went through fal.ai, which fronts Seedance, Kling and others behind one queue API;
+that bought model breadth at the cost of a translation layer between this repo and
+the vendor schema. Going direct trades the breadth away for three things: one
+account and one credential pair for both pipeline stages, raw Base64 image upload
+so there is no CDN step, and no SDK — the JWT is twelve lines of `hmac`, so
+`pip install -e agent-core` reaches real generation with no extra.
+
+It costs something real, recorded here rather than buried: the creator-reference
+path is not wired up. fal accepted `elements: [{frontal_image_url}]` inline; the
+official API wants an `element_id` from a separate Element Management endpoint
+whose schema is unverified in `configs/kling_models.yaml`. `supports_persona` is
+therefore `false`, and `--persona` raises rather than being silently ignored,
+because a dropped reference produces a good-looking video in which the creator's
+face changes between cuts.
+
+Changing model is still a `model_name` string plus a path in the spec file, which
+is what keeps the comparison below actionable rather than academic.
 
 ### Which image-to-video endpoint, and why not the best one
+
+> Superseded in part by the move off fal. The dollar figures below were fal's
+> published per-second rates, and Seedance is no longer reachable from this repo
+> at all. The *shape* of the argument survives the move and is the reason the
+> pipeline is built the way it is, so it is kept rather than deleted.
+> `styleloom models` now reports billed seconds instead of dollars, because the
+> official platform bills credits against a subscription and publishes no
+> per-second rate this repo could record honestly.
 
 `styleloom models` prints this for any saved style. For a 30s video at short-form
 pacing (20 shots, ~1.5s each):

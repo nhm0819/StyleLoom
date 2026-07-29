@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from styleloom_core import RunInputs, RunStatus, build_plan, run_batch, run_once
-from styleloom_core.errors import NotFoundError
+from styleloom_core.errors import NotFoundError, ToolError
 from styleloom_core.events import EventKind
 from styleloom_core.media import probe_video
 from styleloom_core.planner import STANDARD_STEPS
@@ -202,3 +202,27 @@ def test_a_missing_bgm_is_caught_at_the_same_point_as_the_input(ctx, style):
     paying for the renders first."""
     with pytest.raises(NotFoundError, match="bgm"):
         run_once(ctx, style.style_id, RunInputs(text=INPUTS[0], bgm=Path("nope.mp3")))
+
+
+def test_a_persona_is_refused_before_anything_is_billed(ctx, style, tmp_path):
+    """The provider refuses too, but that fires inside render -- after casting and
+    the first keyframes have already been paid for. This is the last point before
+    any provider call."""
+    face = tmp_path / "face.png"
+    face.write_bytes(b"not really a png")
+    assert ctx.video.supports_persona is False
+
+    before = len(ctx.runs.list_records())
+    with pytest.raises(ToolError, match="cannot consume a reference image"):
+        run_once(ctx, style.style_id, RunInputs(text=INPUTS[0], persona_ref=face))
+    assert len(ctx.runs.list_records()) == before
+
+
+def test_a_persona_is_accepted_when_the_provider_can_use_it(ctx, style, tmp_path, monkeypatch):
+    """The gate is the provider's declaration, not a ban on the option."""
+    face = tmp_path / "face.png"
+    face.write_bytes(b"not really a png")
+    monkeypatch.setattr(type(ctx.video), "supports_persona", property(lambda self: True))
+
+    record = run_once(ctx, style.style_id, RunInputs(text=INPUTS[0], persona_ref=face))
+    assert record.status is RunStatus.DONE, record.error
