@@ -15,10 +15,8 @@ if TYPE_CHECKING:
 VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
 MAX_FACTS = 6
 MAX_TOPIC_CHARS = 80
-# Beginning, middle and end. Enough to tell what a short-form clip is about --
-# subject, setting, whether anyone speaks to camera -- without turning ingest into
-# a video understanding problem. More frames buy detail this stage does not use:
-# the brief it produces is four short fields.
+# Beginning, middle and end. More frames buy detail the four-field brief cannot
+# use.
 VIDEO_FRAME_SAMPLES = 3
 
 
@@ -37,10 +35,6 @@ def ingest(ctx: Context, session: RunSession) -> Brief:
     if inputs.file_path is not None:
         kind = classify(inputs.file_path.suffix)
         if kind == "video":
-            # Stills from the video, not just its length. Passing only a duration
-            # meant a video input contributed nothing but a filename: the model
-            # invented a topic from `--text` alone and the attachment was
-            # decorative. The vision call was already wired up for images.
             images = sample_frames(inputs.file_path, VIDEO_FRAME_SAMPLES) or None
             note = video_duration_note(inputs.file_path)
             if images:

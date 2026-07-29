@@ -267,3 +267,14 @@ def test_the_payload_and_the_planner_agree_on_shot_length():
     assert [float(e["duration"]) for e in payload["multi_prompt"]] == [
         provider.shot_billed_duration(s.duration) for s in shots
     ]
+
+
+@pytest.mark.parametrize("model_name", [V3, OMNI])
+def test_every_model_enforces_the_prompt_limits(model_name):
+    """The omni entry was missing both limits and the negative prompt, so
+    switching to it silently turned off caption suppression and the budget."""
+    provider = make_provider(kling_t2v_model=model_name)
+    assert provider.max_shot_prompt_chars == 512
+    assert provider.build_generate_payload("x", 3.0)["negative_prompt"]
+    with pytest.raises(VideoProviderError, match="over"):
+        provider.build_sequence_payload([MotionShot("x" * 600, 1.0)])

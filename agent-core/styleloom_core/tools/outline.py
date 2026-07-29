@@ -12,16 +12,9 @@ if TYPE_CHECKING:
     from ..session import RunSession
 
 MIN_BEAT_SEC = 0.5
-# Enough room for a few beats at MIN_BEAT_SEC, and nothing more. It exists only to
-# stop a degenerate reference producing a zero-length body; whenever it binds, the
-# reference's own total runtime has been overruled.
-#
-# It was 6.0s, which is a long-form number in a short-form system: any reference
-# under (6 + hook window) seconds silently got a longer body than it measured. A
-# 7.25s reference with a 3s hook needs a 4.25s body and was given 6s, so the
-# output ran 9s against a style that says 7.25 -- 24% over, on a property QC is
-# supposed to be checking. It went unnoticed because the total_duration tolerance
-# was 6.0s absolute, wide enough to swallow the entire error.
+# Only stops a degenerate reference producing a zero-length body. Whenever it
+# binds, the reference's own runtime has been overruled -- so it stays well below
+# any real short-form length.
 MIN_BODY_BUDGET = 2.0
 
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 import secrets
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 import yaml
 
@@ -69,10 +69,6 @@ def sample_with_recency(
         if pick <= acc:
             return item
     return pool[-1]
-
-
-class Scored(Protocol):
-    score: float
 
 
 def softmax_sample(

@@ -359,24 +359,14 @@ def sample_frames(
 ) -> list[bytes]:
     """Evenly spaced JPEG stills from a video, in chronological order.
 
-    For showing a model what an input video *contains*. That is a different job
-    from `probe_video`, which samples every other frame to measure cut rhythm and
-    colour: this reads `count` frames and cares what is in them.
+    For showing a model what a video contains, unlike `probe_video`, which
+    samples densely to measure rhythm and colour.
 
-    Positions are inset rather than 0%/50%/100%. The literal first and last
-    frames of a short-form clip are very often black, a fade, or a platform
-    outro, so a three-frame sample taken at the exact ends can be two black
-    frames and a middle -- worse than useless, because the model describes the
-    black. 8%/50%/92% still reads as beginning, middle and end.
+    Positions are inset rather than 0%/50%/100%: the literal first and last frames
+    of a short-form clip are very often black, a fade, or a platform outro.
 
-    Downscaled because nothing between here and the API resizes: a 4K frame is
-    ~8MB of base64 and thousands of tokens for a still that gets described in one
-    sentence. 768px on the long edge is well inside what the vision endpoint
-    keeps, and three of them cost roughly the same as a paragraph of text.
-
-    Returns [] on an unreadable file. Callers degrade to a text-only brief rather
-    than failing the run -- a video that cannot be decoded here would also have
-    failed at probe time with a better message.
+    Downscaled because nothing between here and the API resizes. Returns [] on an
+    unreadable file so callers degrade to a text-only brief.
     """
     if count <= 0:
         return []

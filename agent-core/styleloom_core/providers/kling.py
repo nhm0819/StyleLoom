@@ -41,17 +41,13 @@ def _b64url(raw: bytes) -> str:
 def encode_jwt(access_key: str, secret_key: str, issued_at: int, ttl_sec: int = 1800) -> str:
     """Sign the HS256 token Kling expects.
 
-    Hand-rolled rather than pulling in PyJWT, and this is the one place in the
-    codebase where that is the right call. HS256 is `hmac-sha256` over
-    `header.payload` with both parts base64url-encoded -- twelve lines against a
-    dependency that would otherwise be the only thing standing between a fresh
-    clone and a working provider. The fal path needed `pip install fal-client`;
-    this one needs nothing that httpx did not already bring.
+    Hand-rolled rather than adding PyJWT: HS256 is hmac-sha256 over
+    `header.payload`, both base64url-encoded, and this keeps the provider free of
+    optional dependencies.
 
-    `nbf` is set five seconds in the past deliberately. It is not defensive
-    padding -- the client's clock only has to be a second ahead of Kling's for a
-    token stamped "not valid before now" to be rejected on arrival, and the
-    resulting 401 says nothing about clocks.
+    `nbf` is backdated five seconds on purpose -- a client clock one second ahead
+    of Kling's would otherwise have its own token rejected as not-yet-valid, with
+    a 401 that says nothing about clocks.
     """
     if not access_key or not secret_key:
         raise VideoProviderError(
@@ -79,10 +75,8 @@ def load_kling_specs(settings: Settings) -> dict:
 def aspect_ratio_for(width: int, height: int, choices: list[str]) -> str:
     """Nearest legal aspect ratio to the configured output size.
 
-    The official API has no width/height, only a ratio enum, so an output size
-    that is not exactly 9:16 still has to become one of the listed strings.
-    Nearest by ratio rather than a lookup table: a 720x1280 default and someone
-    else's 1080x1920 both land on 9:16 without either being special-cased.
+    The API has no width/height, only a ratio enum, so any size has to map onto
+    one of the listed strings.
     """
     target = width / height
     return min(choices, key=lambda c: abs(target - _ratio(c)))
@@ -94,11 +88,7 @@ def _ratio(choice: str) -> float:
 
 
 class KlingVideoProvider(BaseVideoProvider):
-    """The official Open Platform, keyframe then motion.
-
-    Kling's own image model generates the keyframe, so the whole pipeline runs on
-    one account and one set of credentials.
-    """
+    """The official Open Platform, text to video."""
 
     name = "kling"
 
@@ -149,13 +139,8 @@ class KlingVideoProvider(BaseVideoProvider):
 
     @property
     def max_concurrency(self) -> int:
-        """From settings, not from the spec file.
-
-        fal published a per-endpoint concurrency limit, so the ceiling was spec
-        data. Kling's limit is a property of the account tier instead -- the same
-        endpoint allows more parallel tasks on a larger plan -- so it cannot be
-        recorded per model and has to be told to us.
-        """
+        """From settings, not the spec file: Kling's limit is an account-tier
+        property, so no per-model value could be correct."""
         return self.settings.kling_max_concurrency
 
     # --- transport --------------------------------------------------------- #
@@ -202,9 +187,7 @@ class KlingVideoProvider(BaseVideoProvider):
         """Block until the task finishes, return the first result URL.
 
         Polling rather than the `callback_url` the API also offers: a callback
-        needs a public HTTP listener, which turns a CLI into a service. The
-        interval is a setting because the right value depends on the clip -- a 3s
-        cut and a 15s multi-shot request are minutes apart.
+        needs a public HTTP listener, which turns a CLI into a service.
         """
         url = f"{self.base_url}{path.rstrip('/')}/{task_id}"
         deadline = time.monotonic() + self.settings.kling_timeout_sec
@@ -264,14 +247,9 @@ class KlingVideoProvider(BaseVideoProvider):
     def _duration_string(self, duration: float) -> str:
         """Whole seconds for a single-cut request, always rounded UP.
 
-        `duration` is only legal as an integer, and `render_shot` trims the result
-        down to the cut length afterwards -- but it only trims when the clip is
-        longer, because a short clip cannot be extended. Rounding to nearest would
-        buy 4s for a 4.4s cut, and nothing downstream would notice: the clip is
-        returned untrimmed and the timeline is quietly 0.4s short.
-
-        `round()` would be doubly wrong here, being banker's rounding: round(4.5)
-        is 4, so exactly-half cuts lose the most.
+        `render_shot` trims a long clip down and cannot extend a short one, so
+        rounding to nearest would buy 4s for a 4.4s cut and leave the timeline
+        quietly short. `round()` is also banker's: round(4.5) is 4.
         """
         spec = self.t2v
         wanted = max(duration, float(spec.get("min_duration", 1)))
@@ -281,14 +259,9 @@ class KlingVideoProvider(BaseVideoProvider):
     def shot_billed_duration(self, seconds: float) -> float:
         """One cut inside a multi-shot request, to whole seconds with a floor of 1.
 
-        Nearest rather than up, unlike `_duration_string`, and the difference is
-        not an oversight. A multi-shot generation comes back as one clip that is
-        never trimmed, so rounding down shortens a cut rather than producing an
-        untrimmable file -- and nearest is what minimises total drift across the
-        storyboard. Rounding up here would stretch every video instead.
-
-        floor(x + 0.5) rather than round(), which is banker's: round(2.5) is 2,
-        so a 2.5s cut would quietly lose half a second.
+        Nearest rather than up, unlike `_duration_string`: a multi-shot clip is
+        never trimmed, so rounding up would stretch every video. floor(x + 0.5)
+        rather than banker's round(), where round(2.5) is 2.
         """
         if self.t2v.get("multi_prompt_duration_type") == "integer_string":
             return float(max(1, math.floor(seconds + 0.5)))
@@ -320,11 +293,8 @@ class KlingVideoProvider(BaseVideoProvider):
     def build_sequence_payload(self, shots: list[MotionShot]) -> dict:
         """Multi-shot storyboard.
 
-        Two rules from the official schema. `multi_shot` and `shot_type` must both
-        be set for `multi_prompt` to be read at all, and setting them makes the
-        top-level `prompt` invalid -- so it is never added rather than added and
-        popped, since a competing top-level value is how a storyboard silently
-        becomes one shot.
+        `multi_shot` and `shot_type` must both be set for `multi_prompt` to be
+        read at all, and setting them makes the top-level `prompt` invalid.
         """
         spec = self.t2v
         param = spec.get("multi_prompt_param")

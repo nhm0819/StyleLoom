@@ -83,13 +83,9 @@ def casting(ctx: Context, session: RunSession) -> Casting:
         entropy_source=ENTROPY_SOURCE,
     )
 
-    # No reference portrait is generated. Under text-to-video there is no image
-    # input to feed one into, and there is no image endpoint to make one with.
-    # The creator reaches the output as the description below, inside every shot
-    # prompt -- which fixes the person's *type* across cuts, not their face. A
-    # multi-shot request holds one face across the cuts it contains; across
-    # windows it does not. That limit is real and recorded in the README rather
-    # than papered over with a portrait nothing could consume.
+    # No reference portrait: text-to-video has no image input to feed one into.
+    # The creator reaches the output as the description below, which fixes the
+    # person's type across cuts, not their face. See README.
 
     # Recorded immediately, so the next run in a batch sees these choices even if
     # this run later fails during render.

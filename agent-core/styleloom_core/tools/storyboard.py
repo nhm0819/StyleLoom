@@ -26,12 +26,8 @@ MIN_AVG_SHOT_SEC = 0.3
 
 
 def look_tokens(style: StyleSchema) -> str:
-    """Grade only, without the presenter or the location.
-
-    Split out because these are the properties QC measures, so they belong in
-    every storyboard entry even when identity does not: a continuation shot
-    inherits the person from the entry above it, but a grade left unsaid drifts.
-    """
+    """Grade only. QC measures these, so they go in every entry even when
+    identity does not -- a continuation inherits the person, not the grade."""
     look = style.look
     return (
         f"{look.grade} colour grade, "
@@ -42,23 +38,13 @@ def look_tokens(style: StyleSchema) -> str:
 def style_tokens(style: StyleSchema, casting: Casting, budget: int = 0) -> str:
     """The look, the presenter and the location, compressed into prompt tokens.
 
-    Injected into *every* shot prompt rather than stated once, because the video
-    model has no memory across calls -- a grade described only in shot 1 has
-    drifted by shot 6, and a presenter described only once becomes a different
-    person by the third cut.
+    Casting comes first: identity is what viewers notice breaking, so it should
+    not sit at the tail where models weight it least.
 
-    Casting comes first: subject identity is the thing viewers notice breaking, so
-    it should not sit at the tail of a long prompt where models weight it least.
-
-    `budget` caps the result. Emission order and drop order are separate lists,
-    because they answer different questions: casting is emitted first so the model
-    weights it heavily, but it is dropped before the colour tokens because colour
-    is what QC measures and identity is partly held by the multi-shot generation
-    itself. Ranking by position would drop contrast before the presenter's
-    wardrobe, which is backwards -- and did, until this was split.
-
-    Truncating mid-token instead would hand the model half a sentence; this only
-    ever removes whole clauses.
+    `budget` caps the result. Emission order and drop order are deliberately
+    different: casting is emitted first so the model weights it heavily, and given
+    up first because colour is what QC measures. Only whole clauses are removed --
+    cutting to a character count would hand the model half a sentence.
     """
     look = style.look
     parts = [
@@ -149,15 +135,9 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
     casting = session.get("casting", Casting)
 
     rng = random.Random()
-    # A multi-shot request allows 512 characters per storyboard entry; a
-    # single-cut request allows thousands. So the budget depends on how this
-    # storyboard will be rendered, and prompts are built to fit rather than
-    # truncated at the provider, where the cut would land mid-sentence.
-    #
-    # Measured against the whole `video_prompt`, not just the shared tokens: the
-    # beat text varies per shot and comes from a model, so a fixed split between
-    # "tokens" and "everything else" is right for the average shot and wrong for
-    # the long one -- which is the only one that matters here.
+    # A multi-shot entry allows 512 characters; a single-cut prompt allows
+    # thousands. Measured against the whole video_prompt, since the beat text
+    # varies per shot -- a fixed token/remainder split is wrong for the long one.
     limit = ctx.video.max_shot_prompt_chars if ctx.settings.render_mode == "multi_shot" else 0
     tokens = style_tokens(style, casting)
     looks = look_tokens(style)
@@ -174,10 +154,9 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                 return candidate
         return f"{head}{style_tokens(style, casting, budget=1)}{tail}"
     moves = style.camera.moves or ["static"]
-    # `brief.topic` is deliberately not injected. The beat text the outline
-    # produces already describes this shot of this subject, so restating the
-    # topic added ~30 characters of paraphrase to every entry -- and in a
-    # 512-character entry that was costing `contrast`.
+    # brief.topic is deliberately not injected: the beat text already describes
+    # this shot of this subject, and the paraphrase cost `contrast` in a 512-
+    # character entry.
     shots: list[Shot] = []
 
     # --- hook window -------------------------------------------------------
@@ -189,8 +168,6 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
             f"{hook.selected.visual}. {style.hook_style.shot_size} shot, "
             f"{move}. {tokens}. Opening shot."
         )
-        # The camera move is already in the scene line, and "no captions" now
-        # travels once in negative_prompt rather than in all six entries.
         hook_motion = "Fast and attention-grabbing."
         shots.append(
             Shot(
@@ -230,11 +207,7 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
             body_scene = (
                 f"{beat.content}. {sizes[j]} shot, {move}. {tokens}."
             )
-            # Not the move: that is already in the scene line above, and a
-            # storyboard entry reading "CU shot, static_phone_mount. ...
-            # static_phone_mount." spends characters saying it twice. What the
-            # motion clause is for is how the shot plays, which the beat text
-            # carries.
+            # Not the move -- that is already in the scene line above.
             body_motion = "Natural continuous motion, no cut inside the shot."
             shots.append(
                 Shot(

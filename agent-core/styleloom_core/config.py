@@ -31,10 +31,8 @@ class Settings(BaseSettings):
         env_prefix="STYLELOOM_",
         env_file=".env",
         extra="ignore",
-        # Required because the key fields carry a validation_alias. Without it,
-        # pydantic accepts *only* the alias, so `Settings(kling_secret_key="x")` silently
-        # yields "" -- no exception, just a wrong value. Every programmatic caller
-        # and every test that injects a key directly depends on this.
+        # Without this, fields with a validation_alias accept ONLY the alias, so
+        # Settings(kling_secret_key="x") silently yields "".
         populate_by_name=True,
     )
 
@@ -44,16 +42,11 @@ class Settings(BaseSettings):
     casting_path: Path = Path("configs/casting.yaml")
 
     # --- LLM (planning, hook generation, style synthesis) -------------------
-    # `auto` uses the real provider when its key is present and falls back to the
-    # offline mock otherwise. This is the default because the most likely failure
-    # for someone running this with their own keys is injecting the key and
-    # getting placeholder output because a second variable was still on `mock`.
+    # `auto`: real provider when its key is present, offline mock otherwise.
     llm_provider: str = "auto"  # auto | mock | anthropic
     llm_model: str = "claude-sonnet-5"
 
-    # Accepts the conventional unprefixed name too. Anyone injecting credentials
-    # into a container will set ANTHROPIC_API_KEY, not our namespaced version, and
-    # silently reading an empty string would be the worst possible outcome.
+    # Unprefixed name accepted too: containers set ANTHROPIC_API_KEY.
     anthropic_api_key: str = Field(
         default="",
         validation_alias=AliasChoices(
@@ -63,8 +56,7 @@ class Settings(BaseSettings):
 
     # --- Video (keyframe + image-to-video) ---------------------------------
     video_provider: str = "auto"  # auto | mock | kling
-    # Two halves of one credential: the access key is public and travels in the
-    # token, the secret key never leaves the process and signs it.
+    # The access key travels inside the token; the secret key signs it.
     kling_access_key: str = Field(
         default="",
         validation_alias=AliasChoices("STYLELOOM_KLING_ACCESS_KEY", "KLING_ACCESS_KEY"),
@@ -73,50 +65,29 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("STYLELOOM_KLING_SECRET_KEY", "KLING_SECRET_KEY"),
     )
-    # api-singapore is the international account system. api-beijing.klingai.com
-    # is the mainland one -- a separate account, not a region of the same one, so
-    # switching hosts also means switching credentials.
+    # api-beijing.klingai.com is a separate account system, not a region.
     kling_base_url: str = "https://api-singapore.klingai.com"
     # `model_name` values, which must be keys in configs/kling_models.yaml -- the
     # provider validates both on construction rather than at the first request.
     #
-    # One model, one call per cut: this is a text-to-video pipeline with no
-    # keyframe stage. The Omni variant (kling-v3-omni) is the reference-driven
-    # tier, but it lives on a different path and its advantage is elements, which
-    # are not wired up yet.
+    # Must be a key in configs/kling_models.yaml; validated on provider init.
     kling_t2v_model: str = "kling-v3"
 
-    # The quality tier, which on the official API is a request field rather than
-    # part of the endpoint. `std` is the default because the default is what an
-    # evaluation run costs; `pro` is the same parameters at a higher rate.
-    #
-    # It is also a resolution choice: std renders 720p and pro 1080p. That pairs
-    # with the 720x1280 output below, so the default combination generates at the
-    # size it delivers. Raising width/height to 1080x1920 without also switching
-    # to `pro` upscales a 720p render, which `styleloom doctor` flags.
+    # Also a resolution choice: std renders 720p, pro 1080p. Must match the
+    # output size below or the result is upscaled; `doctor` flags a mismatch.
     kling_mode: str = "std"  # std | pro
 
-    # Generation is asynchronous, so these two bound a wait rather than a request.
-    # The timeout is generous because it covers queue time as well as inference:
-    # a 15s multi-shot job behind a busy queue is minutes, and giving up early
-    # abandons a task that has already been billed.
+    # Generation is asynchronous; these bound a wait, not a request. The timeout
+    # covers queue time, and giving up early abandons a billed task.
     kling_timeout_sec: float = 900.0
     kling_poll_interval_sec: float = 5.0
 
-    # Not spec data, unlike the fal registry it replaces: Kling's concurrency
-    # ceiling is a property of the account tier, so the same endpoint allows more
-    # parallel tasks on a larger plan and no per-model value could be correct.
+    # An account-tier property, so it cannot live in the per-model spec file.
     kling_max_concurrency: int = 1
 
     # --- Output ------------------------------------------------------------
-    # 9:16 at 720p30, which is the short-form baseline every vertical platform
-    # accepts without re-encoding. Portrait is the default rather than a flag
-    # because this system exists to reproduce short-form references; landscape
-    # still works (the Kling provider maps any size onto the nearest ratio the
-    # API offers), it is just not what the defaults are tuned for.
-    #
-    # 30fps rather than 60: the reference set is 30, the video model delivers 30,
-    # and a 60fps container holding 30fps content only doubles the file.
+    # 9:16 at 720p30: the short-form baseline. Landscape works too -- the Kling
+    # provider maps any size onto the nearest ratio the API offers.
     width: int = 720
     height: int = 1280
     fps: int = 30

@@ -5,12 +5,8 @@ few months -- several of the current leaders did not exist a year ago. Hardcodin
 one gives the harness a shelf life; keeping the choice in settings means someone
 else can point this at whatever is best when they read it.
 
-Text-to-video only. An earlier revision generated a keyframe and animated it,
-which cost two calls and two round trips per cut and bought less than it looked
-like: every cut generated its own keyframe from its own text, so the person in
-shot 2 was not the person in shot 1. A multi-shot text-to-video request produces
-every cut in the window from one generation, which is where cross-cut consistency
-actually comes from.
+Text-to-video only. Cross-cut consistency comes from multi-shot requests, which
+produce every cut in a window from one generation.
 """
 
 from __future__ import annotations
@@ -82,26 +78,16 @@ class BaseVideoProvider:
 
     @property
     def max_shot_prompt_chars(self) -> int:
-        """Longest prompt one storyboard entry inside a multi-shot request takes.
-
-        Far tighter than the top-level prompt -- 512 against a few thousand on
-        Kling -- and worth declaring separately because the difference decides how
-        much style context every cut can carry. 0 means no stated limit.
-        """
+        """Longest prompt one storyboard entry takes. Far tighter than the
+        top-level prompt -- 512 against a few thousand on Kling. 0 means none."""
         return 0
 
     def shot_billed_duration(self, seconds: float) -> float:
         """How long one cut inside a multi-shot request actually runs.
 
-        Declared because the caller has to do arithmetic with it. Endpoints
-        quantise per-cut durations -- Kling's are integers with a floor of 1s --
-        and a window packed against `max_shot_window_sec` using the durations we
-        asked for will overflow the real limit once they are rounded. Four 3.6s
-        cuts request 14.4s and deliver 16s, and the endpoint rejects the request
-        rather than truncating it.
-
-        Identity by default: a provider that honours the duration it is given has
-        nothing to declare.
+        Windows are packed against this, not against the requested durations:
+        endpoints quantise, so four 3.6s cuts request 14.4s and deliver 16s, and
+        the request is rejected whole rather than truncated.
         """
         return seconds
 

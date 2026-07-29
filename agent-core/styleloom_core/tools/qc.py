@@ -21,16 +21,8 @@ if TYPE_CHECKING:
 
 PASS_THRESHOLD = 0.7
 
-# Tolerances are set where a human would stop noticing the difference, not where
-# the mock happens to pass.
-#
-# The two timing checks are RELATIVE, because this is a short-form system and a
-# fixed second is a different quantity at every length. The absolute values these
-# replace were 0.6s on avg_shot_sec and 6.0s on total_duration, which on the
-# 10.7s ASMR reference meant +-78% and +-56%: a video with 1.3s cuts passed as a
-# reproduction of one with 0.76s cuts, and pacing is the property the whole
-# schema exists to hold. Measured against real runs those tolerances sat 86x and
-# 60x above the actual error, so they were not protecting anything.
+# The timing checks are relative: a fixed second means something different at 7s
+# and at 60s, and this is a short-form system.
 #
 # (fraction of the target, absolute floor). The floor keeps a very short cut from
 # demanding frame-accuracy that cut detection cannot resolve.
@@ -44,12 +36,9 @@ TOLERANCES = {
     "contrast": 0.20,
     "warmth": 0.12,
     "hook_window_shots": 0.5,
-    # Mean distance between each cut we asked for and the nearest cut actually
-    # present in the output. In per_shot mode this is near zero by construction --
-    # ffmpeg cuts where told -- so a non-zero value there means a trim silently
-    # failed. In multi_shot mode it is the real question: the model chose where to
-    # cut, and this is the only way to find out whether it obeyed. 0.35s is about
-    # where a viewer starts to feel a cut land late at short-form pacing.
+    # Mean distance from each requested cut to the nearest one in the output. Near
+    # zero in per_shot mode by construction, so a non-zero value there means a
+    # trim failed; in multi_shot it measures whether the model obeyed.
     "cut_timing_drift": 0.35,
 }
 

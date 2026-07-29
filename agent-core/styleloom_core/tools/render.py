@@ -44,17 +44,11 @@ FALLBACK_WINDOW_SEC = 15.0
 def render_shot(provider: BaseVideoProvider, shot: Shot, out_dir: Path) -> Path:
     """Render one shot at exactly `shot.duration_sec`.
 
-    The endpoint has a duration floor (3s on Kling v3) well above a typical
-    short-form shot, and short-form pacing is precisely what the style schema
-    encodes. So request the floor, then trim. The waste is real and unavoidable
-    in this mode: a 1.2s cut still costs a 3s generation. Stretching the shot to
-    fill the floor instead would destroy the pacing, which is the one property
-    the whole system exists to reproduce. `multi_shot` is the way out; see the
-    module docstring.
-
-    One call per cut. The earlier keyframe-then-animate path cost two, and the
-    keyframe it bought was generated independently per shot -- so it fixed the
-    composition of that one cut and did nothing for the next.
+    The endpoint floor (3s on Kling v3) is well above a typical short-form cut, so
+    request the floor and trim. The waste is unavoidable in this mode -- a 1.2s cut
+    costs a 3s generation -- and stretching the shot to fill the floor instead
+    would destroy the pacing the schema exists to reproduce. `multi_shot` is the
+    way out; see the module docstring.
     """
     requested = max(shot.duration_sec, provider.min_clip_sec)
     final = out_dir / f"shot_{shot.index:02d}.mp4"
@@ -85,11 +79,9 @@ def split_windows(
     the endpoint rejects the whole request rather than truncating it. `max_shots`
     of 0 means the endpoint states no count limit.
 
-    `billed` converts a requested duration into the length the endpoint will
-    actually run, because the window is measured against the latter. Kling
-    quantises per-cut durations to whole seconds, so four 3.6s cuts request 14.4s
-    -- inside the window -- and deliver 16s, which is outside it. Packing on the
-    requested figures builds a request the endpoint rejects whole.
+    `billed` converts a requested duration into what the endpoint will actually
+    run, since the window is measured against the latter: four 3.6s cuts request
+    14.4s and deliver 16s, and the request is rejected whole.
     """
     if window_sec <= 0 and max_shots <= 0:
         return [list(shots)]
@@ -109,11 +101,6 @@ def split_windows(
     if current:
         windows.append(current)
     return windows
-
-
-def estimated_windows(shots: list[Shot], window_sec: float) -> int:
-    """How many generations multi_shot would need. Used by cost reporting."""
-    return len(split_windows(shots, window_sec))
 
 
 def _render_per_shot(
@@ -171,17 +158,10 @@ def _render_multi_shot(
     errors: dict[int, str] = {}
 
     for w, shots in enumerate(windows):
-        # Every cut in the window comes out of one generation, which is where
-        # cross-cut consistency in this system now comes from: the model holds the
-        # person and the room across the cuts it makes itself. Across windows
-        # there is no such anchor, so a 14-cut montage is three people rather than
-        # fourteen -- better than per_shot, and not the same as one.
         try:
-            # Only the first entry establishes who and where. The rest say "same
-            # subject and location" and restate the grade, because all six are
-            # read by one generation -- repeating 260 characters of presenter and
-            # room in every entry spends the 512-character budget on something
-            # the model has already been told.
+            # Only the first entry establishes who and where: all of them are read
+            # by one generation, so repeating the presenter and room in each would
+            # spend the 512-character budget on what the model already has.
             clip = ctx.video.generate_sequence(
                 [
                     MotionShot(

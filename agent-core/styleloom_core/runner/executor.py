@@ -19,7 +19,7 @@ from ..context import Context, new_run_id
 from ..errors import NotFoundError
 from ..events import EventKind
 from ..planner import Plan, build_plan
-from ..schema import AssembleResult, RunInputs, RunRecord, RunStatus
+from ..schema import AssembleResult, RunInputs, RunRecord
 from ..session import RunSession
 from ..tools import registry
 
@@ -173,5 +173,3 @@ def run_batch(
     return [run_once(ctx, style_id, item, plan=plan) for item in inputs]
 
 
-def succeeded(records: list[RunRecord]) -> list[RunRecord]:
-    return [r for r in records if r.status is RunStatus.DONE]

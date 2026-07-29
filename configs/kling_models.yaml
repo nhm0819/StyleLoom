@@ -1,120 +1,76 @@
 # KlingAI Open Platform endpoint specs.
 #
-# WHY THIS FILE EXISTS, unchanged from the fal registry it replaces: the payload
-# differences between models are data, not code. A hardcoded payload sends a wrong
-# parameter name to every model except the one it was written against, and does it
-# silently -- the request succeeds and the parameter is ignored. Adding a model is
-# a data change here, not an edit to the provider.
+# Payload differences between models are data, not code: a wrong parameter name is
+# accepted and ignored rather than rejected, so the request succeeds and the
+# parameter does nothing. Adding a model is a change here, not to the provider.
 #
-# WHAT CHANGED with the move off fal. These are not URL path segments any more.
-# The official API has one path per capability and selects the model in the body:
+# Keys are `model_name` values sent in the request body, not URL segments. The API
+# has one path per capability and selects the model in the body:
 #
-#     fal      POST https://fal.run/fal-ai/kling-video/v3/pro/image-to-video
-#     official POST https://api-singapore.klingai.com/v1/videos/image2video
-#              {"model_name": "kling-v3", "mode": "pro", ...}
+#     POST https://api-singapore.klingai.com/v1/videos/text2video
+#     {"model_name": "kling-v3", "mode": "std", ...}
 #
-# So the keys below are `model_name` values, the path is a field, and the quality
-# tier moved from the endpoint id into `mode` (std | pro), which is a setting.
+# `mode` (std | pro) is the quality tier and lives in Settings, not here.
+# Text to video only: there is no keyframe stage and no image endpoint.
 #
-# Parameter names differ from fal's wrapper throughout and were read off
-# kling.ai/document-api, not translated from the fal specs:
+# Values marked `unverified` are floors and enums that could not be confirmed --
+# kling.ai/document-api renders client-side, so only fragments that reached a
+# search index were readable. Each is a one-line fix, not a code change.
 #
-#     audio         fal generate_audio     official sound: "on" | "off"
-#     multi-shot    fal multi_prompt only  official multi_shot + shot_type + multi_prompt
-#     shot entry    fal {prompt,duration}  official {index,prompt,duration}
-#
-# TEXT TO VIDEO ONLY. There is no keyframe stage and no image endpoint here. The
-# earlier design generated a still per cut and animated it, which cost two calls
-# per cut and bought less than it appeared to: each keyframe was generated
-# independently from its own text, so it fixed one cut's composition and did
-# nothing to make the next cut the same person.
-#
-# VERIFICATION STATUS. Everything marked `verified` below appears in a request
-# example on kling.ai/document-api. Everything marked `unverified` is a floor or
-# an enum this file could not confirm, because the documentation site renders
-# client-side and returns an empty shell to a fetch -- only fragments that reached
-# a search index were readable. Unverified values are set conservatively, and each
-# one is a one-line fix rather than a code change.
-#
-# NOT RECORDED: price. The official platform bills credits against a subscription
-# rather than dollars per second, so the `price_per_sec` field the fal registry
-# carried has no honest equivalent here. `styleloom models` therefore reports
-# billed seconds and the wasted share -- which is the provider-independent part of
-# that arithmetic -- and omits a cost column rather than inventing a rate. The
-# per-second figures quoted around the web ($0.075/s and similar) are resellers'
-# bulk-contract rates, not the official ones.
+# No price field. Official billing is credit-based per subscription tier with no
+# published per-second rate, so `styleloom models` reports billed seconds instead.
+# Per-second figures quoted elsewhere are resellers' contract rates.
 
 pricing_source: >-
-  none. Official billing is credit-based per subscription tier; per-second credit
-  rates live in the Kling VIDEO 3.0 Model User Guide, which is not machine
-  readable. Run a short generation and read the console to calibrate.
+  none. Credit-based per subscription tier. Run a short generation and read the
+  console to calibrate.
 
-# api-singapore is the international endpoint. api-beijing.klingai.com serves the
-# mainland account system; the two are separate accounts, not regions of one.
+# api-beijing.klingai.com is the mainland account system -- a separate account,
+# not a region of this one.
 base_url: https://api-singapore.klingai.com
 
 text_to_video:
   kling-v3:
     # POST /v1/videos/text2video   verified
-    # The default. Kling 3.0 proper -- multi-shot storyboards, native audio,
-    # 3-15s. `mode` selects the std/pro tier, which is where the price difference
-    # lives now that it is not in the endpoint id.
     path: /v1/videos/text2video
-    # No image_param. There is no start frame: the prompt carries composition,
-    # subject and grade, and the endpoint infers nothing from an input picture.
-    # aspect_ratio therefore has to be sent -- image2video read it off the start
-    # image, text2video has nothing to read.
+    # No start frame, so aspect_ratio must be sent: image2video reads it off the
+    # input image, text2video has nothing to read.
     aspect_ratio_choices: ["9:16", "16:9", "1:1"]
     duration_param: duration
     duration_format: bare_string      # "5", not "5s"
-    min_duration: 3                   # unverified. The 3-15s range for v3 comes
-                                      # from vendor summaries rather than a
-                                      # schema; older models are a strict 5|10
-                                      # enum, so this is the conservative read.
+    min_duration: 3                   # unverified. The 3-15s range comes from
+                                      # vendor summaries rather than a schema;
+                                      # older models are a strict 5|10 enum.
     max_duration: 15
     max_shot_window_sec: 15
     max_shots_per_request: 6          # verified: "up to 6 storyboards, minimum 1"
     max_prompt_chars: 2500            # top-level `prompt`, used by per_shot
-    max_shot_prompt_chars: 512        # verified: "the maximum length of the prompt
-                                      # for each storyboard 512 characters". Five
-                                      # times tighter than the top-level field, and
-                                      # the reason multi_shot prompts are built to
-                                      # a budget rather than written and hoped for.
-    multi_shot_param: multi_shot      # "true"/"false" as strings in the example
+    max_shot_prompt_chars: 512        # verified. Five times tighter than the
+                                      # top-level field, which is why multi_shot
+                                      # prompts are built to a budget.
+    multi_shot_param: multi_shot      # "true"/"false" as strings
     shot_type: customize              # verified. `intelligence` lets the model cut
-                                      # its own shots, which is the opposite of
-                                      # what this system wants -- the whole point
-                                      # is holding the reference's cut timing.
+                                      # its own shots, defeating the point of
+                                      # holding the reference's cut timing.
     multi_prompt_param: multi_prompt
     multi_prompt_duration_type: integer_string   # {"index":1,"duration":"2"}
-    multi_prompt_indexed: true                   # entries carry a 1-based index
+    multi_prompt_indexed: true
     output_key: videos                # data.task_result.videos[].url
     capabilities: [multi_prompt]
     # Cross-cut identity comes from the multi-shot request itself: every cut in one
-    # window is produced by a single generation, so the model holds the person and
-    # the room across the cuts it makes. Across windows it does not -- a 14-cut
-    # montage split into three requests is three people.
-    #
-    # The stronger mechanism is `element_list: [{element_id}]` plus
-    # `<<<element_1>>>` in the prompt, which pins one face everywhere. The id comes
-    # from a separate Element Management endpoint whose request schema this file
-    # could not verify, so it is not wired up and is not guessed at: a wrong guess
-    # does not fail loudly, the request succeeds with the element ignored and the
-    # face changes anyway.
+    # window is a single generation. Across windows it is not. Pinning one face
+    # everywhere needs `element_list: [{element_id}]` plus `<<<element_1>>>`, whose
+    # ids come from an Element Management endpoint not verified here.
     defaults:
-      sound: "off"                    # captions are burned in and the reference
-                                      # set has no dialogue; audio is billed extra
-      # Captions are burned in by ffmpeg afterwards, so any the model renders are
-      # duplicates in the wrong font. This belongs here rather than as "no text
-      # overlay" inside every storyboard entry: it is one field per request
-      # instead of 47 characters times six, and a negative instruction sitting in
-      # a positive prompt is the weaker way to give it.
+      sound: "off"                    # captions are burned in by ffmpeg; audio is
+                                      # billed extra for something discarded
+      # One field per request, rather than 47 characters in each of six entries --
+      # and a negative instruction in a positive prompt is the weaker way to give it.
       negative_prompt: "text overlay, subtitles, captions, watermark, logo"
 
   kling-v3-omni:
-    # POST /v1/videos/omni-video/   verified -- a different path, not a different
-    # model_name on the same one. This is the trap the fal naming hid: on fal both
-    # were `kling-video/{v3,o3}/...` under one call shape.
+    # POST /v1/videos/omni-video/   verified. A different path, not a different
+    # model_name on the same one.
     path: /v1/videos/omni-video/
     aspect_ratio_choices: ["9:16", "16:9", "1:1"]
     duration_param: duration
@@ -123,6 +79,8 @@ text_to_video:
     max_duration: 15
     max_shot_window_sec: 15
     max_shots_per_request: 6
+    max_prompt_chars: 2500
+    max_shot_prompt_chars: 512
     multi_shot_param: multi_shot
     shot_type: customize
     multi_prompt_param: multi_prompt
@@ -130,21 +88,17 @@ text_to_video:
     multi_prompt_indexed: true
     output_key: videos
     capabilities: [multi_prompt]
-    # Same gap as v3, and Omni is where it hurts most: reference-driven generation
-    # is the entire reason to choose this model, and the reference is an element id.
     defaults:
       sound: "off"
+      negative_prompt: "text overlay, subtitles, captions, watermark, logo"
 
-# NOT ADDED, and why:
+# Not added:
 #
 #   * kling-v3-0-turbo   Appears in third-party model lists as the fast v3 tier.
-#                        No official request example was readable, and the exact
-#                        model_name string is the one thing that cannot be guessed
-#                        -- a wrong value is rejected, not silently ignored.
+#                        No official request example was readable, and a wrong
+#                        model_name is rejected rather than ignored.
 #   * kling-o1, kling-v2-6, kling-v2-5-turbo
-#                        Older generations. They take the same image2video path,
-#                        so adding one is a block here; none of them carry the
-#                        multi_shot storyboard that this system's pacing depends on.
+#                        Older generations on the same path. None carry the
+#                        multi_shot storyboard this system's pacing depends on.
 #   * Motion Control, Avatar, Effects
-#                        Separate solution APIs with their own paths. Out of scope
-#                        for a keyframe-then-motion pipeline.
+#                        Separate solution APIs with their own paths.

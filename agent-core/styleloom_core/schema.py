@@ -207,30 +207,17 @@ class Shot(BaseModel):
     camera_move: str
     action: str
     caption: str
-    # Kept as two fields even though one string is sent, because they answer
-    # different questions and are edited for different reasons: `scene_prompt`
-    # is what the shot looks like -- subject, framing, creator, grade -- and
-    # `motion_prompt` is what moves in it. Reading a storyboard to work out why a
-    # cut came out wrong is much easier when those are not fused.
+    # Two fields though one string is sent: what the shot looks like, and what
+    # moves in it. Fused, a storyboard is much harder to debug.
     scene_prompt: str
     motion_prompt: str
-    # The same cut written for an entry that is not first in its multi-shot
-    # request. Identity and location are dropped -- the entry above it in the same
-    # generation already established them -- and only the grade is restated.
-    #
-    # Stored rather than derived because the full and short forms are built from
-    # the same pieces at storyboard time, and having both in storyboard.json is
-    # what makes it possible to read a request back and see which form each cut
-    # was sent as.
+    # For an entry that is not first in its multi-shot request: identity and
+    # location dropped, since the entry above it in the same generation gave them.
     continuation_prompt: str = ""
 
     @property
     def video_prompt(self) -> str:
-        """The single prompt a text-to-video request carries.
-
-        Look first, then movement, because the endpoint weights early tokens more
-        heavily and the grade is the part this system is judged on reproducing.
-        """
+        """Look first, then movement: the endpoint weights early tokens more."""
         return f"{self.scene_prompt} {self.motion_prompt}".strip()
 
     @property
@@ -264,18 +251,12 @@ class ClipSegment(BaseModel):
 
     path: Path
     shot_indices: list[int]
-    # The storyboard's intent. In multi_shot mode the delivered cuts may differ,
-    # which is what the QC drift check measures -- so the request has to be
-    # recorded separately from what the endpoint was actually asked to run.
+    # The storyboard's intent, which the QC drift check measures against.
     requested_durations: list[float] = Field(default_factory=list)
-    # What the endpoint was actually asked to run, after it quantised the request.
-    # Kling's per-cut durations are whole seconds, so a 0.6s cut is asked for as
-    # 1s and the cut inside the returned clip lands at 1s. Captions have to be
-    # placed against these or they drift away from the cuts they belong to, a
-    # little further with every shot.
-    #
-    # Empty means identical to `requested_durations`, which is the per_shot case:
-    # each clip is trimmed to the exact cut length before it gets here.
+    # What the endpoint was asked to run after quantisation. Kling's per-cut
+    # durations are whole seconds, so a 0.6s cut lands at 1s and captions must be
+    # placed against these. Empty means identical -- the per_shot case, where each
+    # clip is trimmed to the exact cut length first.
     billed_durations: list[float] = Field(default_factory=list)
 
     @property
