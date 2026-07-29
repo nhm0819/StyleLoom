@@ -50,12 +50,12 @@ def style_tokens(style: StyleSchema, casting: Casting, budget: int = 0) -> str:
     Casting comes first: subject identity is the thing viewers notice breaking, so
     it should not sit at the tail of a long prompt where models weight it least.
 
-    `budget` caps the result, and the order below is also the drop order -- last
-    part goes first. It exists because a multi-shot request allows only 512
-    characters per storyboard entry while a top-level prompt allows several
-    thousand, so the same tokens have to survive a much tighter space. Dropping
-    from the tail spends the budget on identity and grade, which QC measures,
-    rather than on the descriptive keywords, which it does not.
+    `budget` caps the result. Emission order and drop order are separate lists,
+    because they answer different questions: casting is emitted first so the model
+    weights it heavily, but it is dropped before the colour tokens because colour
+    is what QC measures and identity is partly held by the multi-shot generation
+    itself. Ranking by position would drop contrast before the presenter's
+    wardrobe, which is backwards -- and did, until this was split.
 
     Truncating mid-token instead would hand the model half a sentence; this only
     ever removes whole clauses.
@@ -72,11 +72,21 @@ def style_tokens(style: StyleSchema, casting: Casting, budget: int = 0) -> str:
     # field, so spelling "vertical 9:16" into the prompt spends characters
     # restating what the API already knows -- and inside a 512-character
     # storyboard entry those characters cost `contrast`, which QC measures.
+    fixed = len(parts)
     parts += look.keywords[:4]
     parts = [p for p in parts if p]
+
     if budget > 0:
-        while len(", ".join(parts)) > budget and len(parts) > 1:
-            parts.pop()
+        # Index order to give up, most expendable first: the descriptive keywords,
+        # then location, then the presenter, and only then the measured colour.
+        give_up = list(range(fixed, len(parts))) + [1, 0, 4, 3, 2]
+        dropped: set[int] = set()
+        for index in give_up:
+            if len(", ".join(p for i, p in enumerate(parts) if i not in dropped)) <= budget:
+                break
+            if index < len(parts):
+                dropped.add(index)
+        parts = [p for i, p in enumerate(parts) if i not in dropped]
     return ", ".join(parts)
 
 
@@ -133,7 +143,7 @@ def sizes_for(style: StyleSchema, count: int, rng: random.Random) -> list[ShotSi
 def storyboard(ctx: Context, session: RunSession) -> Storyboard:
     """Expand beats into individually promptable shots at the reference's pacing."""
     style = session.get("style", StyleSchema)
-    brief = session.get("brief", Brief)
+    session.get("brief", Brief)  # declared dependency
     outline = session.get("outline", Outline)
     hook = session.get("hook", HookResult)
     casting = session.get("casting", Casting)
@@ -164,7 +174,10 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                 return candidate
         return f"{head}{style_tokens(style, casting, budget=1)}{tail}"
     moves = style.camera.moves or ["static"]
-    topic = brief.topic
+    # `brief.topic` is deliberately not injected. The beat text the outline
+    # produces already describes this shot of this subject, so restating the
+    # topic added ~30 characters of paraphrase to every entry -- and in a
+    # 512-character entry that was costing `contrast`.
     shots: list[Shot] = []
 
     # --- hook window -------------------------------------------------------
@@ -173,9 +186,8 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
     for i in range(hook_cuts):
         move = moves[i % len(moves)]
         hook_scene = (
-            f"{hook.selected.visual}. Subject of: {topic}. "
-            f"{style.hook_style.shot_size} shot, {move}. {tokens}. "
-            "Opening shot of a short-form video, immediately legible."
+            f"{hook.selected.visual}. {style.hook_style.shot_size} shot, "
+            f"{move}. {tokens}. Opening shot."
         )
         # The camera move is already in the scene line, and "no captions" now
         # travels once in negative_prompt rather than in all six entries.
@@ -216,8 +228,7 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
         for j in range(count):
             move = moves[(len(shots) + j) % len(moves)]
             body_scene = (
-                f"{beat.content}. Subject of: {topic}. "
-                f"{sizes[j]} shot, {move}. {tokens}."
+                f"{beat.content}. {sizes[j]} shot, {move}. {tokens}."
             )
             # Not the move: that is already in the scene line above, and a
             # storyboard entry reading "CU shot, static_phone_mount. ...

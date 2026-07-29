@@ -376,9 +376,9 @@ def test_per_shot_prompts_are_not_squeezed(ctx, style, brief, outline):
     assert all(full in shot.scene_prompt for shot in board.shots)
 
 
-def test_the_budget_drops_whole_clauses_from_the_tail(ctx, style, brief):
-    """Identity and grade are what QC measures, so they outrank the descriptive
-    keywords. Truncating mid-token would hand the model half a sentence."""
+def test_the_budget_only_ever_removes_whole_clauses(ctx, style, brief):
+    """Never a character count. Cutting to length would hand the model half a
+    sentence and charge for the result."""
     session = make_session(ctx, style, text="주제")
     session.artifacts["brief"] = brief
     cast = casting_tool.casting(ctx, session)
@@ -387,7 +387,37 @@ def test_the_budget_drops_whole_clauses_from_the_tail(ctx, style, brief):
     squeezed = storyboard_tool.style_tokens(style, cast, budget=200)
 
     assert len(squeezed) <= 200
-    assert full.startswith(squeezed.split(",")[0])
-    assert cast.creator.prompt in squeezed          # identity survives
-    assert not squeezed.endswith(",")               # no half-clause
+    assert not squeezed.endswith(",")
+    # Every surviving clause is one that existed in full, unaltered.
     assert all(part.strip() in full for part in squeezed.split(","))
+
+
+def test_the_budget_gives_up_location_before_colour(ctx, style, brief):
+    """Drop order is not emission order, and the difference is the point.
+
+    Casting is emitted first so the model weights it heavily. It is dropped
+    first too -- before the colour tokens -- because colour is what QC measures
+    and identity is partly held by the multi-shot generation itself. Ranking by
+    position instead discarded `contrast` while keeping the presenter's wardrobe.
+    """
+    session = make_session(ctx, style, text="주제")
+    session.artifacts["brief"] = brief
+    cast = casting_tool.casting(ctx, session)
+
+    squeezed = storyboard_tool.style_tokens(style, cast, budget=120)
+
+    assert style.look.grade in squeezed
+    assert "saturation" in squeezed and "contrast" in squeezed
+    assert cast.setting.prompt not in squeezed
+
+
+def test_the_topic_is_not_restated_in_every_shot(ctx, style, brief, outline):
+    """The beat text already describes this shot of this subject, so `Subject
+    of: <topic>` was ~30 characters of paraphrase per entry."""
+    session = make_session(ctx, style, text="주제")
+    session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
+    session.artifacts["casting"] = casting_tool.casting(ctx, session)
+
+    board = storyboard_tool.storyboard(ctx, session)
+
+    assert all("Subject of:" not in s.video_prompt for s in board.shots)

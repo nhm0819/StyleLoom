@@ -593,6 +593,13 @@ line and the motion clause, and the framing token went entirely because
 characters to ~180, and the lead entry now keeps `contrast` instead of dropping
 it to fit.
 
+**When the budget still binds, colour is the last thing dropped.** Emission order
+and drop order are separate: casting is written first so the model weights it
+heavily, and given up first because colour is what QC measures while identity is
+partly held by the multi-shot generation itself. Ranking by position discarded
+`contrast` while keeping the presenter's wardrobe, which is backwards. At a
+120-character budget the tokens that survive are grade, saturation and contrast.
+
 **Prompts are budgeted, and the two limits are five times apart.** A top-level
 `prompt` takes ~2500 characters; a single entry inside `multi_prompt` takes 512.
 The prompts this system builds run 590–700, so `per_shot` fits comfortably and
@@ -663,7 +670,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-236 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+238 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting
