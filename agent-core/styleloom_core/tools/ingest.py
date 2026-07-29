@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..media import video_duration_note
+from ..media import sample_frames, video_duration_note
 from ..schema import Brief, InputKind
 from .registry import tool
 
@@ -15,6 +15,11 @@ if TYPE_CHECKING:
 VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
 MAX_FACTS = 6
 MAX_TOPIC_CHARS = 80
+# Beginning, middle and end. Enough to tell what a short-form clip is about --
+# subject, setting, whether anyone speaks to camera -- without turning ingest into
+# a video understanding problem. More frames buy detail this stage does not use:
+# the brief it produces is four short fields.
+VIDEO_FRAME_SAMPLES = 3
 
 
 def classify(path_suffix: str) -> InputKind:
@@ -27,27 +32,37 @@ def ingest(ctx: Context, session: RunSession) -> Brief:
     inputs = session.inputs
     kind: InputKind = "text"
     description = inputs.text
+    images: list[bytes] | None = None
 
     if inputs.file_path is not None:
         kind = classify(inputs.file_path.suffix)
         if kind == "video":
+            # Stills from the video, not just its length. Passing only a duration
+            # meant a video input contributed nothing but a filename: the model
+            # invented a topic from `--text` alone and the attachment was
+            # decorative. The vision call was already wired up for images.
+            images = sample_frames(inputs.file_path, VIDEO_FRAME_SAMPLES) or None
             note = video_duration_note(inputs.file_path)
+            if images:
+                note += (
+                    f". The {len(images)} attached stills are frames from this "
+                    "video in order, from near its beginning, middle and end."
+                )
+            else:
+                note += ". Frames could not be read, so no stills are attached."
         else:
             note = f"image input ({inputs.file_path.name})"
+            images = [inputs.file_path.read_bytes()]
         description = f"{inputs.text}\n{note}".strip()
-
-    images = None
-    if kind == "image" and inputs.file_path is not None:
-        # Only stills go to the vision call. A video's frames would need
-        # sampling, which is the reference-analysis job, not the ingest job.
-        images = [inputs.file_path.read_bytes()]
 
     first_line = description.strip().splitlines()[0] if description.strip() else "unknown"
     parsed = ctx.llm.complete_json(
         task="ingest",
         system=(
             f"Extract a short-form video brief. Answer in {inputs.language}. "
-            "Return JSON: topic, audience, key_message, facts (list of strings)."
+            "Any attached images describe the subject to make a video about, not "
+            "a style to copy. Return JSON: topic, audience, key_message, facts "
+            "(list of strings)."
         ),
         user=f"TOPIC: {first_line}\n\n{description}",
         temperature=0.4,

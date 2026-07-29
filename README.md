@@ -205,6 +205,16 @@ All three are checked before the run directory is created, so a typo in `--bgm`
 fails immediately instead of after the renders have been paid for. `inputs.json`
 records the resolved path, not the argument.
 
+An image is sent to the model whole. A video is sampled — three stills at roughly
+8%, 50% and 92% of its length, downscaled to 768px and labelled in the prompt as
+ordered frames from one clip. The insets are not decoration: the literal first and
+last frames of a short-form video are very often black or a platform outro, and a
+sample taken at the exact ends describes those instead of the content. Around
+170KB per ingest call, once per run.
+
+If the frames cannot be decoded the brief still gets built from `--text`, with the
+prompt saying so rather than implying stills were seen.
+
 ### 3. Prove the hook is not frozen
 
 ```bash
@@ -618,7 +628,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-235 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+239 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting

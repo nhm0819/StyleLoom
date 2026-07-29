@@ -215,3 +215,79 @@ def test_distinct_frames_survives_a_single_move_style(ctx, style, brief, outline
 
     for previous, current in zip(board.shots, board.shots[1:], strict=False):
         assert current.image_prompt != previous.image_prompt
+
+
+# --- video ingest ----------------------------------------------------------- #
+#
+# Regression: a video input reached the model as a filename and a duration and
+# nothing else, so `--file clip.mp4` produced the same brief as `--file
+# anything.mp4`. The vision path existed and was only wired to stills.
+
+
+class RecordingLLM:
+    """Captures what ingest actually sends, which is the thing under test.
+
+    The mock LLM ignores `images` -- correctly, it has no eyes -- so asserting on
+    the returned Brief cannot distinguish frames being sent from frames being
+    dropped. The call itself has to be inspected.
+    """
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.calls: list[dict] = []
+
+    def complete_json(self, task, system, user, temperature=0.7, images=None):
+        self.calls.append({"task": task, "system": system, "user": user,
+                           "images": images})
+        return self.inner.complete_json(task, system, user, temperature, images)
+
+
+def test_video_input_sends_frames_to_the_model(ctx, style, reference_video):
+    ctx.llm = RecordingLLM(ctx.llm)
+    session = make_session(ctx, style, file_path=reference_video, text="이 영상 소개해줘")
+
+    brief = ingest_tool.ingest(ctx, session)
+
+    assert brief.input_kind == "video"
+    sent = ctx.llm.calls[0]["images"]
+    assert sent is not None, "video input reached the model with no frames"
+    assert len(sent) == ingest_tool.VIDEO_FRAME_SAMPLES
+    # JPEG magic. The API is told media_type image/jpeg, so anything else is a
+    # 400 that only shows up with a real key.
+    assert all(frame.startswith(b"\xff\xd8\xff") for frame in sent)
+
+
+def test_the_prompt_says_the_stills_are_video_frames(ctx, style, reference_video):
+    """Without it the model sees three unrelated photos and averages them."""
+    ctx.llm = RecordingLLM(ctx.llm)
+    session = make_session(ctx, style, file_path=reference_video)
+
+    ingest_tool.ingest(ctx, session)
+
+    user = ctx.llm.calls[0]["user"]
+    assert "frames from this video" in user
+    assert "beginning, middle and end" in user
+
+
+def test_frames_are_small_enough_to_send(ctx, style, reference_video):
+    """Nothing between here and the API resizes, so oversized frames are paid for
+    on every ingest call."""
+    ctx.llm = RecordingLLM(ctx.llm)
+    ingest_tool.ingest(ctx, make_session(ctx, style, file_path=reference_video))
+
+    for frame in ctx.llm.calls[0]["images"]:
+        assert len(frame) < 400_000
+
+
+def test_an_undecodable_video_degrades_instead_of_failing(ctx, style, tmp_path):
+    """A run that cannot read frames should still produce a brief from the text."""
+    fake = tmp_path / "broken.mp4"
+    fake.write_bytes(b"not a video")
+    ctx.llm = RecordingLLM(ctx.llm)
+    session = make_session(ctx, style, file_path=fake, text="주제")
+
+    brief = ingest_tool.ingest(ctx, session)
+
+    assert brief.input_kind == "video"
+    assert ctx.llm.calls[0]["images"] is None
+    assert "no stills are attached" in ctx.llm.calls[0]["user"]

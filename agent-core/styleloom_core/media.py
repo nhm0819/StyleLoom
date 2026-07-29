@@ -354,6 +354,72 @@ def probe_video(path: Path, sample_stride: int = 2) -> dict:
     }
 
 
+def sample_frames(
+    path: Path, count: int = 3, long_edge: int = 768, quality: int = 85
+) -> list[bytes]:
+    """Evenly spaced JPEG stills from a video, in chronological order.
+
+    For showing a model what an input video *contains*. That is a different job
+    from `probe_video`, which samples every other frame to measure cut rhythm and
+    colour: this reads `count` frames and cares what is in them.
+
+    Positions are inset rather than 0%/50%/100%. The literal first and last
+    frames of a short-form clip are very often black, a fade, or a platform
+    outro, so a three-frame sample taken at the exact ends can be two black
+    frames and a middle -- worse than useless, because the model describes the
+    black. 8%/50%/92% still reads as beginning, middle and end.
+
+    Downscaled because nothing between here and the API resizes: a 4K frame is
+    ~8MB of base64 and thousands of tokens for a still that gets described in one
+    sentence. 768px on the long edge is well inside what the vision endpoint
+    keeps, and three of them cost roughly the same as a paragraph of text.
+
+    Returns [] on an unreadable file. Callers degrade to a text-only brief rather
+    than failing the run -- a video that cannot be decoded here would also have
+    failed at probe time with a better message.
+    """
+    if count <= 0:
+        return []
+    cap = cv2.VideoCapture(str(path))
+    try:
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if total <= 0:
+            return []
+        if count == 1:
+            positions = [0.5]
+        else:
+            inset = 0.08
+            span = 1.0 - 2 * inset
+            positions = [inset + span * i / (count - 1) for i in range(count)]
+
+        frames: list[bytes] = []
+        for fraction in positions:
+            index = min(total - 1, max(0, int(total * fraction)))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+            ok, frame = cap.read()
+            if not ok:
+                # Seeking is unreliable on some codecs. A missing position is
+                # dropped rather than retried: two good frames beat a stall.
+                continue
+            frames.append(_encode_jpeg(frame, long_edge, quality))
+        return [f for f in frames if f]
+    finally:
+        cap.release()
+
+
+def _encode_jpeg(frame: np.ndarray, long_edge: int, quality: int) -> bytes:
+    height, width = frame.shape[:2]
+    longest = max(height, width)
+    if longest > long_edge:
+        scale = long_edge / longest
+        frame = cv2.resize(
+            frame, (round(width * scale), round(height * scale)),
+            interpolation=cv2.INTER_AREA,
+        )
+    ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+    return buf.tobytes() if ok else b""
+
+
 def video_duration_note(path: Path) -> str:
     """A one-line description of a video input, for the ingest prompt."""
     cap = cv2.VideoCapture(str(path))
