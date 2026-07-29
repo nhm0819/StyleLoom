@@ -156,8 +156,8 @@ def test_every_shot_prompt_carries_the_creator_and_the_setting(ctx, style, brief
     creator_head = cast.creator.prompt.split(",")[0]
     setting_head = cast.setting.prompt.split(",")[0]
     for shot in board.shots:
-        assert creator_head in shot.image_prompt
-        assert setting_head in shot.image_prompt
+        assert creator_head in shot.scene_prompt
+        assert setting_head in shot.scene_prompt
 
 
 def test_casting_tokens_lead_the_prompt(ctx, style, brief):
@@ -170,52 +170,31 @@ def test_casting_tokens_lead_the_prompt(ctx, style, brief):
     assert tokens.index(cast.setting.prompt.split(",")[0]) < tokens.index("colour grade")
 
 
-# --- the reference portrait -------------------------------------------------- #
+# --- identity across cuts ----------------------------------------------------- #
 
 
-def test_no_portrait_is_generated_for_a_provider_that_ignores_it(ctx, style, brief):
-    """The offline renderer cannot honour an identity reference, so paying for a
-    portrait would produce a file nothing consumes."""
-    assert ctx.video.supports_persona is False
-    result = C.casting(ctx, make_session(ctx, style, brief))
-    assert result.creator_ref is None
+def test_the_creator_description_reaches_every_shot_prompt(ctx, style, brief):
+    """The only identity mechanism there is under text-to-video.
 
-
-def test_a_portrait_is_generated_when_the_provider_can_use_it(ctx, style, brief, monkeypatch):
-    monkeypatch.setattr(type(ctx.video), "supports_persona", property(lambda self: True))
-    result = C.casting(ctx, make_session(ctx, style, brief))
-    assert result.creator_ref is not None
-    assert result.creator_ref.exists()
-
-
-def test_the_portrait_prompt_excludes_the_scene(ctx, style, brief):
-    """It exists to fix identity. Baking in a background would fight the per-shot
-    setting prompt instead of supporting it."""
+    No reference portrait is generated any more: there is no image input to feed
+    one into. What carries the creator is this description, repeated in every
+    shot's prompt. That fixes the person's *type* -- age, hair, clothing -- and
+    not their face, which is why cross-cut identity depends on multi_shot putting
+    several cuts inside one generation.
+    """
     cast = C.casting(ctx, make_session(ctx, style, brief))
-    prompt = C.creator_portrait_prompt(cast.creator, style)
-    assert "neutral seamless background" in prompt
-    assert cast.setting.prompt.split(",")[0] not in prompt
+    assert cast.creator.prompt
+    assert cast.creator.id
 
 
-def test_an_explicit_persona_suppresses_the_generated_portrait(
-    ctx, style, brief, tmp_path, monkeypatch
-):
-    """If a caller hands us a specific person, a cast stand-in is not what they
-    asked for."""
-    monkeypatch.setattr(type(ctx.video), "supports_persona", property(lambda self: True))
-    mine = tmp_path / "me.jpg"
-    mine.write_bytes(b"not-a-real-jpeg")
-    result = C.casting(ctx, make_session(ctx, style, brief, persona_ref=mine))
-    assert result.creator_ref is None
-
-
-def test_a_failed_portrait_degrades_instead_of_failing_the_run(ctx, style, brief, monkeypatch):
-    monkeypatch.setattr(type(ctx.video), "supports_persona", property(lambda self: True))
+def test_casting_makes_no_provider_calls(ctx, style, brief, monkeypatch):
+    """Regression: it used to bill a portrait. Under text-to-video that image had
+    no consumer, so it was spend with no effect on the output."""
 
     def boom(*a, **kw):
-        raise RuntimeError("t2i unavailable")
+        raise AssertionError("casting called the video provider")
 
-    monkeypatch.setattr(ctx.video, "keyframe", boom)
+    for name in ("generate", "generate_sequence"):
+        monkeypatch.setattr(ctx.video, name, boom)
     result = C.casting(ctx, make_session(ctx, style, brief))
-    assert result.creator_ref is None
-    assert result.creator.id  # the cast itself still happened
+    assert result.creator.id

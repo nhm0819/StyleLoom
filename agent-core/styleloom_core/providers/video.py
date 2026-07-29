@@ -31,18 +31,14 @@ class MockVideoProvider(BaseVideoProvider):
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    @property
-    def supports_persona(self) -> bool:
-        """False, and deliberately not faked.
+    def _still(self, prompt: str, out_path: Path) -> Path:
+        """A gradient derived from the prompt.
 
-        The offline renderer draws gradients; it cannot honour an identity
-        reference. Reporting True would produce a portrait file that nothing
-        consumes and imply consistency that is not there. The creator still varies
-        offline through the prompt tokens, which is the mechanism under test.
+        Internal, not part of the provider interface: this pipeline is text to
+        video, and the still is only how the offline renderer fakes one. Hashing
+        the prompt is what makes different cuts look different, which is what
+        makes them detectable as cuts.
         """
-        return False
-
-    def keyframe(self, prompt: str, out_path: Path, ref_image: Path | None = None) -> Path:
         digest = hashlib.sha1(prompt.encode()).hexdigest()
         return gradient_keyframe(digest, out_path, self.settings)
 
@@ -66,43 +62,29 @@ class MockVideoProvider(BaseVideoProvider):
         # runs split into the same number of windows a real one would.
         return 15.0
 
-    def animate(
-        self,
-        image_path: Path,
-        motion_prompt: str,
-        duration: float,
-        out_path: Path,
-        persona_ref: Path | None = None,
-    ) -> Path:
-        return push_in(image_path, duration, out_path, self.settings)
+    def generate(self, prompt: str, duration: float, out_path: Path) -> Path:
+        scratch = out_path.parent / f"{out_path.stem}_still.jpg"
+        return push_in(
+            self._still(prompt, scratch), duration, out_path, self.settings
+        )
 
-    def animate_sequence(
-        self,
-        image_path: Path,
-        shots: list[MotionShot],
-        out_path: Path,
-        persona_ref: Path | None = None,
-    ) -> Path:
+    def generate_sequence(self, shots: list[MotionShot], out_path: Path) -> Path:
         """Build one clip whose shots are visually distinct.
 
-        Only the first shot animates the supplied start image; the rest derive
-        their own frame from their own prompt. That mirrors how a real multi-shot
-        endpoint behaves -- the start image anchors the opening shot and the model
-        generates the others -- and it matters for more than realism: if every
-        shot looked the same, the output would contain no detectable cuts and the
-        QC drift check would report a catastrophic miss on a correct timeline.
+        Each cut derives its own frame from its own prompt. If they all looked
+        alike the output would contain no detectable cuts at all, and the QC drift
+        check would report a catastrophic miss on a perfectly correct timeline.
         """
-        parts = []
         scratch = out_path.parent / f"{out_path.stem}_parts"
-        for i, shot in enumerate(shots):
-            frame = (
-                image_path
-                if i == 0
-                else self.keyframe(shot.prompt, scratch / f"{i:02d}.jpg")
+        parts = [
+            push_in(
+                self._still(shot.prompt, scratch / f"{i:02d}.jpg"),
+                shot.duration,
+                scratch / f"{i:02d}.mp4",
+                self.settings,
             )
-            parts.append(
-                push_in(frame, shot.duration, scratch / f"{i:02d}.mp4", self.settings)
-            )
+            for i, shot in enumerate(shots)
+        ]
         return concat(parts, out_path)
 
 

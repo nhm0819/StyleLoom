@@ -28,7 +28,7 @@ from ..errors import ToolError
 from ..events import EventKind
 from ..media import trim_to
 from ..providers import BaseVideoProvider, MotionShot
-from ..schema import Casting, ClipSegment, RenderResult, Shot, Storyboard
+from ..schema import ClipSegment, RenderResult, Shot, Storyboard
 from .registry import tool
 
 if TYPE_CHECKING:
@@ -41,37 +41,29 @@ TRIM_EPSILON = 0.05
 FALLBACK_WINDOW_SEC = 15.0
 
 
-def render_shot(
-    provider: BaseVideoProvider,
-    shot: Shot,
-    out_dir: Path,
-    persona_ref: Path | None = None,
-) -> Path:
+def render_shot(provider: BaseVideoProvider, shot: Shot, out_dir: Path) -> Path:
     """Render one shot at exactly `shot.duration_sec`.
 
-    Every real image-to-video endpoint has a duration floor (Seedance 4s, Kling
-    3s) well above a typical short-form shot, and short-form pacing is precisely
-    what the style schema encodes. So request the floor, then trim. The waste is
-    real and unavoidable in this mode: a 1.2s cut still costs a 3-4s generation.
-    Stretching the shot to fill the floor instead would destroy the pacing, which
-    is the one property the whole system exists to reproduce. `multi_shot` is the
-    way out; see the module docstring.
+    The endpoint has a duration floor (3s on Kling v3) well above a typical
+    short-form shot, and short-form pacing is precisely what the style schema
+    encodes. So request the floor, then trim. The waste is real and unavoidable
+    in this mode: a 1.2s cut still costs a 3s generation. Stretching the shot to
+    fill the floor instead would destroy the pacing, which is the one property
+    the whole system exists to reproduce. `multi_shot` is the way out; see the
+    module docstring.
+
+    One call per cut. The earlier keyframe-then-animate path cost two, and the
+    keyframe it bought was generated independently per shot -- so it fixed the
+    composition of that one cut and did nothing for the next.
     """
-    keyframe = provider.keyframe(
-        shot.image_prompt, out_dir / f"shot_{shot.index:02d}.jpg", ref_image=persona_ref
-    )
     requested = max(shot.duration_sec, provider.min_clip_sec)
     final = out_dir / f"shot_{shot.index:02d}.mp4"
 
     if requested <= shot.duration_sec + TRIM_EPSILON:
-        return provider.animate(keyframe, shot.motion_prompt, requested, final, persona_ref)
+        return provider.generate(shot.video_prompt, requested, final)
 
-    raw = provider.animate(
-        keyframe,
-        shot.motion_prompt,
-        requested,
-        out_dir / "raw" / f"shot_{shot.index:02d}.mp4",
-        persona_ref,
+    raw = provider.generate(
+        shot.video_prompt, requested, out_dir / "raw" / f"shot_{shot.index:02d}.mp4"
     )
     return trim_to(raw, shot.duration_sec, final)
 
@@ -125,7 +117,7 @@ def estimated_windows(shots: list[Shot], window_sec: float) -> int:
 
 
 def _render_per_shot(
-    ctx: Context, session: RunSession, board: Storyboard, persona_ref: Path | None
+    ctx: Context, session: RunSession, board: Storyboard
 ) -> RenderResult:
     out_dir = session.workspace("shots")
     results: dict[int, Path] = {}
@@ -133,7 +125,7 @@ def _render_per_shot(
 
     def work(shot: Shot) -> None:
         try:
-            results[shot.index] = render_shot(ctx.video, shot, out_dir, persona_ref)
+            results[shot.index] = render_shot(ctx.video, shot, out_dir)
         except Exception as exc:  # provider errors are expected and recoverable
             errors[shot.index] = f"{type(exc).__name__}: {exc}"
 
@@ -157,7 +149,7 @@ def _render_per_shot(
 
 
 def _render_multi_shot(
-    ctx: Context, session: RunSession, board: Storyboard, persona_ref: Path | None
+    ctx: Context, session: RunSession, board: Storyboard
 ) -> RenderResult:
     """One generation per window of shots.
 
@@ -179,21 +171,18 @@ def _render_multi_shot(
     errors: dict[int, str] = {}
 
     for w, shots in enumerate(windows):
-        # The first shot's keyframe anchors the look for the whole window; the
-        # per-shot prompts inside the request carry the rest.
-        lead = shots[0]
+        # Every cut in the window comes out of one generation, which is where
+        # cross-cut consistency in this system now comes from: the model holds the
+        # person and the room across the cuts it makes itself. Across windows
+        # there is no such anchor, so a 14-cut montage is three people rather than
+        # fourteen -- better than per_shot, and not the same as one.
         try:
-            keyframe = ctx.video.keyframe(
-                lead.image_prompt, out_dir / f"win_{w:02d}.jpg", ref_image=persona_ref
-            )
-            clip = ctx.video.animate_sequence(
-                keyframe,
+            clip = ctx.video.generate_sequence(
                 [
-                    MotionShot(prompt=s.motion_prompt, duration=s.duration_sec)
+                    MotionShot(prompt=s.video_prompt, duration=s.duration_sec)
                     for s in shots
                 ],
                 out_dir / f"win_{w:02d}.mp4",
-                persona_ref,
             )
         except Exception as exc:
             # A window failure loses every cut in it, unlike per_shot mode where
@@ -217,14 +206,10 @@ def _render_multi_shot(
     return RenderResult(mode="multi_shot", segments=segments, errors=errors)
 
 
-@tool("render", reads=("storyboard", "casting"), writes="render")
+@tool("render", reads=("storyboard",), writes="render")
 def render(ctx: Context, session: RunSession) -> RenderResult:
     """Render every shot, isolating failures as far as the chosen mode allows."""
     board = session.get("storyboard", Storyboard)
-    # A caller-supplied reference wins: if someone hands us a specific person, the
-    # cast portrait is not what they asked for.
-    persona_ref = session.inputs.persona_ref or session.get("casting", Casting).creator_ref
-
     mode = ctx.settings.render_mode
     if mode == "multi_shot" and not ctx.video.supports_multi_shot:
         raise ToolError(
@@ -235,9 +220,9 @@ def render(ctx: Context, session: RunSession) -> RenderResult:
         )
 
     if mode == "multi_shot":
-        result = _render_multi_shot(ctx, session, board, persona_ref)
+        result = _render_multi_shot(ctx, session, board)
     else:
-        result = _render_per_shot(ctx, session, board, persona_ref)
+        result = _render_per_shot(ctx, session, board)
 
     if result.errors:
         session.save_raw(

@@ -4,6 +4,13 @@ Two-method interfaces, deliberately. The frontier video models turn over every
 few months -- several of the current leaders did not exist a year ago. Hardcoding
 one gives the harness a shelf life; keeping the choice in settings means someone
 else can point this at whatever is best when they read it.
+
+Text-to-video only. An earlier revision generated a keyframe and animated it,
+which cost two calls and two round trips per cut and bought less than it looked
+like: every cut generated its own keyframe from its own text, so the person in
+shot 2 was not the person in shot 1. A multi-shot text-to-video request produces
+every cut in the window from one generation, which is where cross-cut consistency
+actually comes from.
 """
 
 from __future__ import annotations
@@ -48,7 +55,7 @@ class BaseVideoProvider:
     def min_clip_sec(self) -> float:
         """Shortest clip this provider can produce.
 
-        Real image-to-video endpoints have a floor (3-4s) far above a typical
+        Real endpoints have a floor (3s on Kling v3) far above a typical
         short-form shot, so callers request the floor and trim down.
         """
         return 0.0
@@ -59,37 +66,18 @@ class BaseVideoProvider:
         return 32
 
     @property
-    def supports_persona(self) -> bool:
-        """Whether `persona_ref` is actually consumed.
-
-        Declared rather than assumed so callers do not pay to generate a reference
-        portrait that the endpoint will ignore.
-        """
-        return False
-
-    @property
     def supports_multi_shot(self) -> bool:
-        """Whether several cuts can be requested in one generation.
-
-        This is the only escape from the per-shot duration floor: a request that
-        carries its own per-cut durations bills the delivered length instead of
-        rounding every 1.2s cut up to a 3-4s minimum.
-        """
+        """Whether one request can carry several cuts and their durations."""
         return False
 
     @property
     def max_shot_window_sec(self) -> float:
-        """Longest single multi-shot generation. Callers split across windows."""
+        """Longest total duration one multi-shot request accepts."""
         return 0.0
 
     @property
     def max_shots_per_request(self) -> int:
-        """Most cuts one multi-shot generation accepts. 0 means no stated limit.
-
-        Separate from `max_shot_window_sec` because the two limits bind
-        independently: fourteen 0.76s cuts total under 11s and still exceed a
-        six-shot cap.
-        """
+        """Most cuts one multi-shot request accepts. 0 means no stated limit."""
         return 0
 
     def shot_billed_duration(self, seconds: float) -> float:
@@ -107,30 +95,13 @@ class BaseVideoProvider:
         """
         return seconds
 
-    def animate_sequence(
-        self,
-        image_path: Path,
-        shots: list[MotionShot],
-        out_path: Path,
-        persona_ref: Path | None = None,
-    ) -> Path:
-        """Render several cuts as one clip.
+    def generate(self, prompt: str, duration: float, out_path: Path) -> Path:
+        """One cut, from text alone."""
+        raise NotImplementedError
 
-        Returns a single file containing every shot in order. The cuts land inside
-        the returned video rather than at file boundaries, so the caller keeps the
-        requested timeline and QC checks whether the model honoured it.
+    def generate_sequence(self, shots: list[MotionShot], out_path: Path) -> Path:
+        """Several cuts in one clip, each with its own prompt and duration.
+
+        Only called when `supports_multi_shot`.
         """
-        raise NotImplementedError
-
-    def keyframe(self, prompt: str, out_path: Path, ref_image: Path | None = None) -> Path:
-        raise NotImplementedError
-
-    def animate(
-        self,
-        image_path: Path,
-        motion_prompt: str,
-        duration: float,
-        out_path: Path,
-        persona_ref: Path | None = None,
-    ) -> Path:
         raise NotImplementedError

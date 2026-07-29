@@ -53,7 +53,7 @@ reusable asset; the right one runs once per input.
         │            creator + setting tokens
         │            injected into EVERY shot
         ▼
-   6. render ....... t2i keyframe -> i2v clip,        render.json
+   6. render ....... text -> clip (t2v),              render.json
         │            concurrent, per-shot failure     shots/*.mp4
         │            isolation, trim to exact length
         ▼

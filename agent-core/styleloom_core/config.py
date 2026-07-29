@@ -80,11 +80,11 @@ class Settings(BaseSettings):
     # `model_name` values, which must be keys in configs/kling_models.yaml -- the
     # provider validates both on construction rather than at the first request.
     #
-    # kling-v3 for both stages, so the whole pipeline runs on one account. The
-    # Omni variant (kling-v3-omni) is the reference-driven tier, but it lives on a
-    # different path and its advantage is elements, which are not wired up yet.
-    kling_t2i_model: str = "kling-v3"
-    kling_i2v_model: str = "kling-v3"
+    # One model, one call per cut: this is a text-to-video pipeline with no
+    # keyframe stage. The Omni variant (kling-v3-omni) is the reference-driven
+    # tier, but it lives on a different path and its advantage is elements, which
+    # are not wired up yet.
+    kling_t2v_model: str = "kling-v3"
 
     # The quality tier, which on the official API is a request field rather than
     # part of the endpoint. `std` is the default because the default is what an

@@ -45,7 +45,7 @@ def make_shots(durations: list[float]) -> list[Shot]:
             camera_move="static",
             action="a",
             caption=f"자막 {i}",
-            image_prompt=f"frame {i}",
+            scene_prompt=f"frame {i}",
             motion_prompt=f"motion {i}",
         )
         for i, d in enumerate(durations)
@@ -122,10 +122,9 @@ def test_the_offline_provider_really_renders_a_multi_cut_clip(ctx, tmp_path):
     """Not a stub. If the mock could not do this, the whole multi_shot path would be
     unreachable offline and therefore untested."""
     assert ctx.video.supports_multi_shot
-    keyframe = ctx.video.keyframe("a red door", tmp_path / "k.jpg")
     shots = [MotionShot(prompt=f"shot {i}", duration=d) for i, d in enumerate([1.2, 1.5, 1.3])]
 
-    clip = ctx.video.animate_sequence(keyframe, shots, tmp_path / "seq.mp4")
+    clip = ctx.video.generate_sequence(shots, tmp_path / "seq.mp4")
     measured = probe_video(clip)
     assert measured["duration"] == pytest.approx(4.0, abs=0.3)
     # Visually distinct shots, or the cuts would not exist to be detected.
@@ -297,7 +296,7 @@ def test_a_failed_window_costs_every_cut_in_it(settings, sink, style, monkeypatc
     def boom(*args, **kwargs):
         raise RuntimeError("endpoint refused the sequence")
 
-    monkeypatch.setattr(ctx.video, "animate_sequence", boom)
+    monkeypatch.setattr(ctx.video, "generate_sequence", boom)
     record = run_once(ctx, style.style_id, RunInputs(text=INPUT))
 
     assert record.status is RunStatus.FAILED

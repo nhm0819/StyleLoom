@@ -51,24 +51,17 @@ def make_provider(**overrides) -> KlingVideoProvider:
 # --- spec file integrity --------------------------------------------------- #
 
 
-def test_every_i2v_spec_declares_the_fields_the_provider_reads():
+def test_every_t2v_spec_declares_the_fields_the_provider_reads():
     specs = load_kling_specs(Settings())
-    for model_name, spec in specs["image_to_video"].items():
-        for key in ("path", "image_param", "duration_param", "min_duration", "output_key"):
-            assert key in spec, f"{model_name} is missing {key}"
-
-
-def test_every_t2i_spec_declares_the_fields_the_provider_reads():
-    specs = load_kling_specs(Settings())
-    for model_name, spec in specs["text_to_image"].items():
-        for key in ("path", "output_key"):
+    for model_name, spec in specs["text_to_video"].items():
+        for key in ("path", "duration_param", "min_duration", "output_key"):
             assert key in spec, f"{model_name} is missing {key}"
 
 
 def test_an_unknown_model_name_fails_on_construction():
     """Before any credits are spent, not at the first request."""
-    with pytest.raises(VideoProviderError, match="unknown image_to_video"):
-        make_provider(kling_i2v_model="kling-v9-imaginary")
+    with pytest.raises(VideoProviderError, match="unknown text_to_video"):
+        make_provider(kling_t2v_model="kling-v9-imaginary")
 
 
 def test_missing_credentials_fail_on_construction():
@@ -122,14 +115,14 @@ def _unpad(segment: str) -> bytes:
 
 def test_keyframe_asks_for_a_vertical_ratio_not_a_pixel_size():
     """The official image API has no width/height, only a ratio enum."""
-    payload = make_provider().build_keyframe_payload("a face")
+    payload = make_provider().build_generate_payload("a face", 3.0)
     assert payload["aspect_ratio"] == "9:16"
     assert "width" not in payload and "height" not in payload
     assert payload["model_name"] == V3
 
 
 def test_landscape_settings_pick_a_landscape_ratio():
-    payload = make_provider(width=1920, height=1080).build_keyframe_payload("x")
+    payload = make_provider(width=1920, height=1080).build_generate_payload("x", 3.0)
     assert payload["aspect_ratio"] == "16:9"
 
 
@@ -141,44 +134,34 @@ def test_an_unusual_size_snaps_to_the_nearest_legal_ratio():
 # --- animate payload ------------------------------------------------------- #
 
 
-def test_animate_uses_the_official_parameter_names():
-    payload = make_provider().build_animate_payload("BASE64", "she smiles", 1.0, None)
-    # `image`, not fal's `start_image_url`.
-    assert payload["image"] == "BASE64"
-    assert "start_image_url" not in payload
+def test_generate_uses_the_official_parameter_names():
+    payload = make_provider().build_generate_payload("she smiles", 1.0)
     assert payload["model_name"] == V3
     assert payload["mode"] == "std"
+    assert payload["prompt"] == "she smiles"
+    # There is no start frame, so the ratio has to be stated rather than inferred.
+    assert payload["aspect_ratio"] == "9:16"
+    assert "image" not in payload
 
 
 def test_duration_is_a_bare_string_at_or_above_the_floor():
     """A 0.76s cut cannot be bought; the endpoint floor is what gets billed."""
-    payload = make_provider().build_animate_payload("B64", "p", 0.76, None)
+    payload = make_provider().build_generate_payload("p", 0.76)
     assert payload["duration"] == "3"
     assert isinstance(payload["duration"], str)
 
 
 def test_duration_is_capped_at_the_endpoint_maximum():
-    payload = make_provider().build_animate_payload("B64", "p", 99.0, None)
+    payload = make_provider().build_generate_payload("p", 99.0)
     assert payload["duration"] == "15"
 
 
 def test_audio_is_off_by_default():
     """Captions are burned in and the reference set has no dialogue, so audio is
     a surcharge for something the output discards."""
-    assert make_provider().build_animate_payload("B64", "p", 3.0, None)["sound"] == "off"
+    assert make_provider().build_generate_payload("p", 3.0)["sound"] == "off"
 
 
-def test_a_persona_is_refused_rather_than_silently_dropped():
-    """The failure this prevents is invisible otherwise: the video renders fine
-    and the creator's face changes between cuts."""
-    with pytest.raises(VideoProviderError, match="silently dropped"):
-        make_provider().build_animate_payload("B64", "p", 3.0, "PERSONA_B64")
-
-
-def test_supports_persona_is_false_and_says_so():
-    """Declared, so the caller does not pay to generate a reference portrait
-    that the request would then drop."""
-    assert make_provider().supports_persona is False
 
 
 # --- multi-shot payload ---------------------------------------------------- #
@@ -188,7 +171,7 @@ def test_sequence_sets_the_two_flags_that_make_multi_prompt_readable():
     """`multi_prompt` alone is ignored: without `multi_shot` and `shot_type` the
     request is a single shot and nothing says so."""
     payload = make_provider().build_sequence_payload(
-        "B64", [MotionShot("a", 1.0), MotionShot("b", 2.0)], None
+        [MotionShot("a", 1.0), MotionShot("b", 2.0)]
     )
     assert payload["multi_shot"] == "true"
     assert payload["shot_type"] == "customize"
@@ -198,15 +181,13 @@ def test_sequence_sets_the_two_flags_that_make_multi_prompt_readable():
 def test_sequence_drops_the_top_level_prompt():
     """The schema makes `prompt` invalid once multi_shot is on. Leaving it in is
     how a storyboard silently collapses to one shot."""
-    assert "prompt" not in make_provider().build_sequence_payload(
-        "B64", [MotionShot("a", 1.0)], None
-    )
+    assert "prompt" not in make_provider().build_sequence_payload([MotionShot("a", 1.0)])
 
 
 def test_shot_entries_are_indexed_from_one():
     """Kling orders the storyboard by `index`, not by array position."""
     payload = make_provider().build_sequence_payload(
-        "B64", [MotionShot("a", 1.0), MotionShot("b", 1.0), MotionShot("c", 1.0)], None
+        [MotionShot("a", 1.0), MotionShot("b", 1.0), MotionShot("c", 1.0)]
     )
     assert [e["index"] for e in payload["multi_prompt"]] == [1, 2, 3]
 
@@ -214,28 +195,24 @@ def test_shot_entries_are_indexed_from_one():
 def test_sub_second_cuts_are_billed_and_delivered_at_one_second():
     """Per-shot duration is an integer with a floor of 1, so a 0.4s cut has no
     legal representation. qc reports the drift rather than this hiding it."""
-    payload = make_provider().build_sequence_payload(
-        "B64", [MotionShot("a", 0.4)], None
-    )
+    payload = make_provider().build_sequence_payload([MotionShot("a", 0.4)])
     assert payload["multi_prompt"][0]["duration"] == "1"
 
 
 def test_half_seconds_round_up_not_to_even():
     """floor(x + 0.5), not round(): Python's round(2.5) is 2, which would quietly
     lose half a second off every 2.5s cut."""
-    payload = make_provider().build_sequence_payload(
-        "B64", [MotionShot("a", 2.5)], None
-    )
+    payload = make_provider().build_sequence_payload([MotionShot("a", 2.5)])
     assert payload["multi_prompt"][0]["duration"] == "3"
 
 
 def test_the_omni_model_posts_to_a_different_path():
     """The trap fal's naming hid: on fal both were one call shape under
     kling-video/{v3,o3}. Officially they are separate endpoints."""
-    v3 = make_provider(kling_i2v_model=V3)
-    omni = make_provider(kling_i2v_model=OMNI)
-    assert v3.i2v["path"] == "/v1/videos/image2video"
-    assert omni.i2v["path"] == "/v1/videos/omni-video/"
+    v3 = make_provider(kling_t2v_model=V3)
+    omni = make_provider(kling_t2v_model=OMNI)
+    assert v3.t2v["path"] == "/v1/videos/text2video"
+    assert omni.t2v["path"] == "/v1/videos/omni-video/"
 
 
 def test_storyboard_cap_is_six_shots():
@@ -261,14 +238,14 @@ def test_concurrency_comes_from_settings_not_the_spec():
 def test_per_shot_never_buys_a_clip_shorter_than_the_cut(wanted):
     """`render_shot` trims a long clip down and cannot extend a short one, so
     rounding down leaves the timeline quietly short with nothing to notice it."""
-    sent = float(make_provider().build_animate_payload("B64", "p", wanted, None)["duration"])
+    sent = float(make_provider().build_generate_payload("p", wanted)["duration"])
     assert sent >= wanted
 
 
 def test_per_shot_rounds_up_rather_than_to_nearest():
     """4.4s asked for as 4s was a real bug: the clip came back 0.4s short and
     passed straight through, because the trim only fires when the clip is long."""
-    payload = make_provider().build_animate_payload("B64", "p", 4.4, None)
+    payload = make_provider().build_generate_payload("p", 4.4)
     assert payload["duration"] == "5"
 
 
@@ -276,7 +253,7 @@ def test_multi_shot_rounds_to_nearest_not_up():
     """The opposite rule, on purpose. A multi-shot clip is never trimmed, so
     rounding up would stretch every video; nearest minimises total drift."""
     payload = make_provider().build_sequence_payload(
-        "B64", [MotionShot("a", 4.4), MotionShot("b", 4.6)], None
+        [MotionShot("a", 4.4), MotionShot("b", 4.6)]
     )
     assert [e["duration"] for e in payload["multi_prompt"]] == ["4", "5"]
 
@@ -286,7 +263,7 @@ def test_the_payload_and_the_planner_agree_on_shot_length():
     rounded differently the request would overflow the window just verified."""
     provider = make_provider()
     shots = [MotionShot("a", 0.4), MotionShot("b", 2.5), MotionShot("c", 4.4)]
-    payload = provider.build_sequence_payload("B64", shots, None)
+    payload = provider.build_sequence_payload(shots)
     assert [float(e["duration"]) for e in payload["multi_prompt"]] == [
         provider.shot_billed_duration(s.duration) for s in shots
     ]

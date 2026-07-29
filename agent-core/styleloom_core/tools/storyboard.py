@@ -50,7 +50,7 @@ def style_tokens(style: StyleSchema, casting: Casting) -> str:
 
 
 def ensure_distinct_frames(shots: list[Shot]) -> list[Shot]:
-    """Guarantee that no cut asks for the same image as the one before it.
+    """Guarantee that no cut asks for the same shot as the one before it.
 
     The camera move in the prompt handles this whenever a style has more than one
     move, since moves cycle by shot index. A style with a single move -- which the
@@ -62,8 +62,8 @@ def ensure_distinct_frames(shots: list[Shot]) -> list[Shot]:
     ordinary editing, not a defect.
     """
     for previous, current in zip(shots, shots[1:], strict=False):
-        if current.image_prompt == previous.image_prompt:
-            current.image_prompt += " Alternate angle on the same moment."
+        if current.scene_prompt == previous.scene_prompt:
+            current.scene_prompt += " Alternate angle on the same moment."
     return shots
 
 
@@ -134,14 +134,14 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                 # for byte-identical imagery, so a "2-cut hook" is one frame shown
                 # twice and the cut is invisible -- which also made it undetectable
                 # to the QC drift check.
-                image_prompt=(
+                scene_prompt=(
                     f"{hook.selected.visual}. Subject of: {topic}. "
                     f"{style.hook_style.shot_size} shot, {move}. {tokens}. "
-                    "Opening frame of a short-form video, immediately legible."
+                    "Opening shot of a short-form video, immediately legible."
                 ),
                 motion_prompt=(
-                    f"{move}, fast and attention-grabbing. {hook.selected.visual}. "
-                    "No text overlay in the generated footage."
+                    f"{move}, fast and attention-grabbing. "
+                    "No text or captions rendered in the footage."
                 ),
             )
         )
@@ -165,13 +165,13 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                     camera_move=move,
                     action=beat.content,
                     caption=beat.content if j == 0 else "",
-                    image_prompt=(
+                    scene_prompt=(
                         f"{beat.content}. Subject of: {topic}. "
                         f"{sizes[j]} shot, {move}. {tokens}."
                     ),
                     motion_prompt=(
-                        f"{move}. {beat.content}. "
-                        "No text overlay in the generated footage."
+                        f"{move}. "
+                        "No text or captions rendered in the footage."
                     ),
                 )
             )

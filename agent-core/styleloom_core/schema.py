@@ -111,7 +111,6 @@ class RunInputs(BaseModel):
     text: str = ""
     file_path: Path | None = None
     bgm: Path | None = None
-    persona_ref: Path | None = None
     language: str = "ko"
 
 
@@ -153,7 +152,6 @@ class Casting(BaseModel):
     # A generated portrait, reused as the reference image for every shot so the
     # presenter stays the same person across cuts. Only produced when the video
     # provider can actually consume a reference image.
-    creator_ref: Path | None = None
     entropy_source: str = ""
 
 
@@ -209,8 +207,22 @@ class Shot(BaseModel):
     camera_move: str
     action: str
     caption: str
-    image_prompt: str  # -> t2i keyframe
-    motion_prompt: str  # -> i2v motion
+    # Kept as two fields even though one string is sent, because they answer
+    # different questions and are edited for different reasons: `scene_prompt`
+    # is what the shot looks like -- subject, framing, creator, grade -- and
+    # `motion_prompt` is what moves in it. Reading a storyboard to work out why a
+    # cut came out wrong is much easier when those are not fused.
+    scene_prompt: str
+    motion_prompt: str
+
+    @property
+    def video_prompt(self) -> str:
+        """The single prompt a text-to-video request carries.
+
+        Look first, then movement, because the endpoint weights early tokens more
+        heavily and the grade is the part this system is judged on reproducing.
+        """
+        return f"{self.scene_prompt} {self.motion_prompt}".strip()
 
 
 class Storyboard(BaseModel):

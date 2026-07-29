@@ -106,13 +106,11 @@ class KlingVideoProvider(BaseVideoProvider):
         self.settings = settings
         specs = load_kling_specs(settings)
         self.base_url = (settings.kling_base_url or specs.get("base_url", "")).rstrip("/")
-        self.image_input = specs.get("image_input", {})
-        self.t2i_id = settings.kling_t2i_model
-        self.i2v_id = settings.kling_i2v_model
+        t2v_id = settings.kling_t2v_model
+        self.t2v_id = t2v_id
         # Validated on construction, not at the first request, so a typo fails the
         # run before any credits are spent.
-        self.t2i = self._spec(specs, "text_to_image", self.t2i_id)
-        self.i2v = self._spec(specs, "image_to_video", self.i2v_id)
+        self.t2v = self._spec(specs, "text_to_video", self.t2v_id)
         # Signing needs the secret on every call, so it is checked once here
         # rather than producing a 401 twenty minutes into a batch.
         encode_jwt(settings.kling_access_key, settings.kling_secret_key, int(time.time()))
@@ -131,32 +129,19 @@ class KlingVideoProvider(BaseVideoProvider):
 
     @property
     def min_clip_sec(self) -> float:
-        return float(self.i2v.get("min_duration", 0))
-
-    @property
-    def supports_persona(self) -> bool:
-        """False on every endpoint currently specced, and deliberately not faked.
-
-        The official API takes a creator reference as `element_list: [{element_id}]`
-        against an id minted by the Element Management endpoint, whose request
-        schema is not verified in configs/kling_models.yaml. Reporting True would
-        make the caller generate and pay for a reference portrait that the request
-        then drops, and the failure would be invisible: the video renders, the face
-        just changes between cuts.
-        """
-        return self.i2v.get("persona_mode", "none") != "none"
+        return float(self.t2v.get("min_duration", 0))
 
     @property
     def supports_multi_shot(self) -> bool:
-        return "multi_prompt" in (self.i2v.get("capabilities") or [])
+        return "multi_prompt" in (self.t2v.get("capabilities") or [])
 
     @property
     def max_shot_window_sec(self) -> float:
-        return float(self.i2v.get("max_shot_window_sec", 0))
+        return float(self.t2v.get("max_shot_window_sec", 0))
 
     @property
     def max_shots_per_request(self) -> int:
-        return int(self.i2v.get("max_shots_per_request", 0))
+        return int(self.t2v.get("max_shots_per_request", 0))
 
     @property
     def max_concurrency(self) -> int:
@@ -250,22 +235,6 @@ class KlingVideoProvider(BaseVideoProvider):
             return items[0]["url"]
         raise VideoProviderError(f"no {output_key} URL in kling result: {str(data)[:300]}")
 
-    def _encode_image(self, path: Path) -> str:
-        """Raw Base64, with no data URI prefix.
-
-        The docs call this out specifically, and it is worth restating at the call
-        site: sending `data:image/jpeg;base64,...` is a 400 whose message does not
-        mention the prefix.
-        """
-        raw = path.read_bytes()
-        limit = int(self.image_input.get("max_bytes", 0))
-        if limit and len(raw) > limit:
-            raise VideoProviderError(
-                f"{path.name} is {len(raw) / 1e6:.1f}MB, over kling's "
-                f"{limit / 1e6:.0f}MB image limit"
-            )
-        return base64.b64encode(raw).decode("ascii")
-
     @staticmethod
     def _download(url: str, out_path: Path) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -281,22 +250,12 @@ class KlingVideoProvider(BaseVideoProvider):
     # Separated from the calls above so the shape -- the part that breaks
     # silently -- is testable without a key or a network.
 
-    def build_keyframe_payload(self, prompt: str) -> dict:
-        spec = self.t2i
-        payload: dict = {
-            "model_name": self.t2i_id,
-            "prompt": prompt,
-            **spec.get("defaults", {}),
-        }
-        if spec.get("size_mode") == "aspect_ratio_enum":
-            payload["aspect_ratio"] = aspect_ratio_for(
-                self.settings.width,
-                self.settings.height,
-                spec.get("aspect_ratio_choices") or ["9:16", "16:9", "1:1"],
-            )
-        if spec.get("resolution"):
-            payload["resolution"] = spec["resolution"]
-        return payload
+    def _aspect_ratio(self) -> str:
+        return aspect_ratio_for(
+            self.settings.width,
+            self.settings.height,
+            self.t2v.get("aspect_ratio_choices") or ["9:16", "16:9", "1:1"],
+        )
 
     def _duration_string(self, duration: float) -> str:
         """Whole seconds for a single-cut request, always rounded UP.
@@ -310,15 +269,10 @@ class KlingVideoProvider(BaseVideoProvider):
         `round()` would be doubly wrong here, being banker's rounding: round(4.5)
         is 4, so exactly-half cuts lose the most.
         """
-        spec = self.i2v
+        spec = self.t2v
         wanted = max(duration, float(spec.get("min_duration", 1)))
         seconds = math.ceil(wanted - 1e-9)
-        seconds = min(seconds, int(spec.get("max_duration", seconds)))
-        choices = spec.get("duration_choices")
-        if choices:
-            longer = [c for c in sorted(choices) if c >= seconds]
-            seconds = longer[0] if longer else max(choices)
-        return str(seconds)
+        return str(min(seconds, int(spec.get("max_duration", seconds))))
 
     def shot_billed_duration(self, seconds: float) -> float:
         """One cut inside a multi-shot request, to whole seconds with a floor of 1.
@@ -332,54 +286,43 @@ class KlingVideoProvider(BaseVideoProvider):
         floor(x + 0.5) rather than round(), which is banker's: round(2.5) is 2,
         so a 2.5s cut would quietly lose half a second.
         """
-        if self.i2v.get("multi_prompt_duration_type") == "integer_string":
+        if self.t2v.get("multi_prompt_duration_type") == "integer_string":
             return float(max(1, math.floor(seconds + 0.5)))
         return seconds
 
-    def build_animate_payload(
-        self, image_b64: str, motion_prompt: str, duration: float, persona_b64: str | None
-    ) -> dict:
-        spec = self.i2v
+    # --- payloads ---------------------------------------------------------- #
+    #
+    # Separated from the calls so the shape -- the part that breaks silently --
+    # is testable without a key or a network.
+
+    def build_generate_payload(self, prompt: str, duration: float) -> dict:
+        spec = self.t2v
         payload: dict = {
-            "model_name": self.i2v_id,
+            "model_name": self.t2v_id,
             "mode": self.settings.kling_mode,
-            "prompt": motion_prompt,
+            "prompt": prompt,
+            "aspect_ratio": self._aspect_ratio(),
             **spec.get("defaults", {}),
         }
-        payload[spec["image_param"]] = image_b64
         payload[spec["duration_param"]] = self._duration_string(duration)
-        if persona_b64 is not None and spec.get("persona_mode") == "none":
-            raise VideoProviderError(
-                f"{self.i2v_id} has no verified creator-reference parameter, so a "
-                "persona would be silently dropped. Run without --persona, or add "
-                "the Element Management call and set persona_mode in "
-                "configs/kling_models.yaml."
-            )
         return payload
 
-    def build_sequence_payload(
-        self, image_b64: str, shots: list[MotionShot], persona_b64: str | None
-    ) -> dict:
+    def build_sequence_payload(self, shots: list[MotionShot]) -> dict:
         """Multi-shot storyboard.
 
-        Two rules from the official schema that the fal payload did not have:
-        `multi_shot` and `shot_type` must both be set for `multi_prompt` to be
-        read at all, and setting them makes the top-level `prompt` invalid. So the
-        prompt is popped rather than left in place -- carrying a competing
-        top-level value is how a storyboard silently becomes one shot.
+        Two rules from the official schema. `multi_shot` and `shot_type` must both
+        be set for `multi_prompt` to be read at all, and setting them makes the
+        top-level `prompt` invalid -- so it is never added rather than added and
+        popped, since a competing top-level value is how a storyboard silently
+        becomes one shot.
         """
-        spec = self.i2v
+        spec = self.t2v
         param = spec.get("multi_prompt_param")
         if not param:
             raise VideoProviderError(
-                f"{self.i2v_id} has no multi_prompt parameter. "
+                f"{self.t2v_id} has no multi_prompt parameter. "
                 "Use render_mode=per_shot, or add the parameter name to "
-                "configs/kling_models.yaml after checking the model page."
-            )
-        if persona_b64 is not None and spec.get("persona_mode") == "none":
-            raise VideoProviderError(
-                f"{self.i2v_id} has no verified creator-reference parameter, so a "
-                "persona would be silently dropped."
+                "configs/kling_models.yaml after checking the docs."
             )
 
         entries = []
@@ -397,61 +340,28 @@ class KlingVideoProvider(BaseVideoProvider):
                 entry = {"index": index, **entry}
             entries.append(entry)
 
-        payload: dict = {
-            "model_name": self.i2v_id,
+        return {
+            "model_name": self.t2v_id,
             "mode": self.settings.kling_mode,
+            "aspect_ratio": self._aspect_ratio(),
             **spec.get("defaults", {}),
             spec["multi_shot_param"]: "true",
             "shot_type": spec.get("shot_type", "customize"),
             param: entries,
         }
-        payload[spec["image_param"]] = image_b64
-        payload.pop("prompt", None)
-        return payload
 
     # --- interface --------------------------------------------------------- #
 
-    def keyframe(self, prompt: str, out_path: Path, ref_image: Path | None = None) -> Path:
-        path = self.t2i["path"]
-        task_id = self._submit(path, self.build_keyframe_payload(prompt))
+    def generate(self, prompt: str, duration: float, out_path: Path) -> Path:
+        path = self.t2v["path"]
+        task_id = self._submit(path, self.build_generate_payload(prompt, duration))
         return self._download(
-            self._poll(path, task_id, self.t2i["output_key"]), out_path
+            self._poll(path, task_id, self.t2v["output_key"]), out_path
         )
 
-    def animate(
-        self,
-        image_path: Path,
-        motion_prompt: str,
-        duration: float,
-        out_path: Path,
-        persona_ref: Path | None = None,
-    ) -> Path:
-        path = self.i2v["path"]
-        payload = self.build_animate_payload(
-            self._encode_image(image_path),
-            motion_prompt,
-            duration,
-            self._encode_image(persona_ref) if persona_ref is not None else None,
-        )
-        task_id = self._submit(path, payload)
+    def generate_sequence(self, shots: list[MotionShot], out_path: Path) -> Path:
+        path = self.t2v["path"]
+        task_id = self._submit(path, self.build_sequence_payload(shots))
         return self._download(
-            self._poll(path, task_id, self.i2v["output_key"]), out_path
-        )
-
-    def animate_sequence(
-        self,
-        image_path: Path,
-        shots: list[MotionShot],
-        out_path: Path,
-        persona_ref: Path | None = None,
-    ) -> Path:
-        path = self.i2v["path"]
-        payload = self.build_sequence_payload(
-            self._encode_image(image_path),
-            shots,
-            self._encode_image(persona_ref) if persona_ref is not None else None,
-        )
-        task_id = self._submit(path, payload)
-        return self._download(
-            self._poll(path, task_id, self.i2v["output_key"]), out_path
+            self._poll(path, task_id, self.t2v["output_key"]), out_path
         )

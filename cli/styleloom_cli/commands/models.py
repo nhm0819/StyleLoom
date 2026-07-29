@@ -107,10 +107,10 @@ def models(
     typer.echo(f"  {total:.1f}s total, {shots} shots at ~{shot_sec:.2f}s each\n")
 
     source = specs.get("pricing_source", "unknown")
-    current = ctx.settings.kling_i2v_model
+    current = ctx.settings.kling_t2v_model
 
     rows: list[tuple[str, str, str, str, str, bool]] = []
-    for model_id, spec in specs.get("image_to_video", {}).items():
+    for model_id, spec in specs.get("text_to_video", {}).items():
         floor = spec.get("min_duration", "?")
         elo = spec.get("quality_elo")
         billed = billed_per_shot_sec(spec, shots, shot_sec)

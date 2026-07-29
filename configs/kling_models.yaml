@@ -19,11 +19,15 @@
 # Parameter names differ from fal's wrapper throughout and were read off
 # kling.ai/document-api, not translated from the fal specs:
 #
-#     start frame   fal start_image_url    official image
-#     end frame     fal end_image_url      official image_tail
 #     audio         fal generate_audio     official sound: "on" | "off"
 #     multi-shot    fal multi_prompt only  official multi_shot + shot_type + multi_prompt
 #     shot entry    fal {prompt,duration}  official {index,prompt,duration}
+#
+# TEXT TO VIDEO ONLY. There is no keyframe stage and no image endpoint here. The
+# earlier design generated a still per cut and animated it, which cost two calls
+# per cut and bought less than it appeared to: each keyframe was generated
+# independently from its own text, so it fixed one cut's composition and did
+# nothing to make the next cut the same person.
 #
 # VERIFICATION STATUS. Everything marked `verified` below appears in a request
 # example on kling.ai/document-api. Everything marked `unverified` is a floor or
@@ -49,43 +53,18 @@ pricing_source: >-
 # mainland account system; the two are separate accounts, not regions of one.
 base_url: https://api-singapore.klingai.com
 
-# Kling accepts a public URL or a raw Base64 string for any image input. Base64 is
-# what this provider sends, because the alternative is standing up a CDN just to
-# hand the API a file that was generated locally two seconds earlier.
-#
-# The docs are explicit that a Base64 image must NOT carry a `data:image/png;base64,`
-# prefix -- only the raw string. Getting that wrong is a 400 with an unhelpful body.
-image_input:
-  encoding: base64_raw
-  max_bytes: 10485760        # unverified: 10MB is the documented ceiling for older
-                             # models and is assumed to still hold. A keyframe at
-                             # 720x1280 JPEG is ~200KB, so this is not a live limit.
-
-text_to_image:
+text_to_video:
   kling-v3:
-    # POST /v1/images/generations   verified
-    # Payload keys verified from the official example:
-    #   model_name, prompt, image, element_list, resolution, n, aspect_ratio,
-    #   external_task_id, callback_url
-    path: /v1/images/generations
-    # There is no width/height. Size is aspect_ratio plus a resolution enum, so
-    # the provider converts settings.width/height into a ratio string.
-    size_mode: aspect_ratio_enum
-    resolution: 2k             # verified as a legal value. 1k/4k unverified.
-    aspect_ratio_choices: ["9:16", "16:9", "1:1", "4:3", "3:4", "3:2", "2:3"]
-    output_key: images         # task result carries data.task_result.images[].url
-    defaults:
-      n: "1"                   # string, matching the docs example's "9"
-
-image_to_video:
-  kling-v3:
-    # POST /v1/videos/image2video   verified
+    # POST /v1/videos/text2video   verified
     # The default. Kling 3.0 proper -- multi-shot storyboards, native audio,
     # 3-15s. `mode` selects the std/pro tier, which is where the price difference
     # lives now that it is not in the endpoint id.
-    path: /v1/videos/image2video
-    image_param: image
-    end_image_param: image_tail
+    path: /v1/videos/text2video
+    # No image_param. There is no start frame: the prompt carries composition,
+    # subject and grade, and the endpoint infers nothing from an input picture.
+    # aspect_ratio therefore has to be sent -- image2video read it off the start
+    # image, text2video has nothing to read.
+    aspect_ratio_choices: ["9:16", "16:9", "1:1"]
     duration_param: duration
     duration_format: bare_string      # "5", not "5s"
     min_duration: 3                   # unverified. The 3-15s range for v3 comes
@@ -105,21 +84,17 @@ image_to_video:
     multi_prompt_indexed: true                   # entries carry a 1-based index
     output_key: videos                # data.task_result.videos[].url
     capabilities: [multi_prompt]
-    # persona_mode is `none`, and that is a real regression against the fal path.
+    # Cross-cut identity comes from the multi-shot request itself: every cut in one
+    # window is produced by a single generation, so the model holds the person and
+    # the room across the cuts it makes. Across windows it does not -- a 14-cut
+    # montage split into three requests is three people.
     #
-    # fal accepted an inline `elements: [{frontal_image_url}]`, so a creator
-    # reference was one field on the render request. The official API references
-    # elements by id -- `element_list: [{element_id}]` plus `<<<element_1>>>` in
-    # the prompt -- and the id comes from a separate Element Management endpoint
-    # whose request schema this file could not verify.
-    #
-    # Declared `none` rather than guessed. A wrong guess here does not fail loudly:
-    # the request succeeds, the element is ignored, and the creator silently
-    # changes face between cuts -- which is the exact failure the harness exists to
-    # prevent. Creator identity still carries through the keyframe, which is
-    # generated from a prompt that describes the cast creator; it is the weaker
-    # mechanism, not none at all.
-    persona_mode: none
+    # The stronger mechanism is `element_list: [{element_id}]` plus
+    # `<<<element_1>>>` in the prompt, which pins one face everywhere. The id comes
+    # from a separate Element Management endpoint whose request schema this file
+    # could not verify, so it is not wired up and is not guessed at: a wrong guess
+    # does not fail loudly, the request succeeds with the element ignored and the
+    # face changes anyway.
     defaults:
       sound: "off"                    # captions are burned in and the reference
                                       # set has no dialogue; audio is billed extra
@@ -130,7 +105,7 @@ image_to_video:
     # model_name on the same one. This is the trap the fal naming hid: on fal both
     # were `kling-video/{v3,o3}/...` under one call shape.
     path: /v1/videos/omni-video/
-    image_param: image
+    aspect_ratio_choices: ["9:16", "16:9", "1:1"]
     duration_param: duration
     duration_format: bare_string
     min_duration: 3
@@ -146,7 +121,6 @@ image_to_video:
     capabilities: [multi_prompt]
     # Same gap as v3, and Omni is where it hurts most: reference-driven generation
     # is the entire reason to choose this model, and the reference is an element id.
-    persona_mode: none
     defaults:
       sound: "off"
 

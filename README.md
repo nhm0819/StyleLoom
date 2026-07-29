@@ -531,8 +531,7 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 | `STYLELOOM_LLM_PROVIDER` | `auto` | `auto` \| `mock` \| `anthropic` |
 | `STYLELOOM_LLM_MODEL` | `claude-sonnet-5` | |
 | `STYLELOOM_VIDEO_PROVIDER` | `auto` | `auto` \| `mock` \| `kling` |
-| `STYLELOOM_KLING_T2I_MODEL` | `kling-v3` | a `model_name` sent in the body, not a URL segment. Must be a key in `configs/kling_models.yaml` |
-| `STYLELOOM_KLING_I2V_MODEL` | `kling-v3` | ditto. `styleloom models` compares the alternatives |
+| `STYLELOOM_KLING_T2V_MODEL` | `kling-v3` | a `model_name` sent in the body, not a URL segment. Must be a key in `configs/kling_models.yaml`. `styleloom models` compares the alternatives |
 | `STYLELOOM_KLING_MODE` | `std` | `std` \| `pro`. The quality tier, which is a request field here rather than a separate endpoint |
 | `STYLELOOM_KLING_BASE_URL` | `https://api-singapore.klingai.com` | International account system. `api-beijing.klingai.com` is a different account, not a region |
 | `STYLELOOM_KLING_TIMEOUT_SEC` | `900` | Covers queue time as well as inference |
@@ -567,6 +566,20 @@ POST https://api-singapore.klingai.com/v1/videos/image2video
 An unrecognised name fails at startup rather than at the first request, because
 the provider checks it against the registry before doing any work.
 
+### Text to video, with no keyframe stage
+
+One call per cut. An earlier revision generated a still with Kling Image and
+animated it, which cost two calls and two round trips per cut. It bought less
+than it appeared to: every cut generated its own keyframe from its own text, so
+the keyframe fixed *that* cut's composition and did nothing to make the next cut
+the same person.
+
+Cross-cut identity now comes from `multi_shot` instead. Every cut inside one
+request is produced by a single generation, so the model holds the person and the
+room across the cuts it makes itself. A 3-cut talking-head is one request and
+therefore one person; a 14-cut montage splits into three and is three people —
+better than the fourteen it used to be, and not the same as one.
+
 **`kling-v3` versus `kling-v3-omni` are different paths.** Kling's own docs
 present 3.0 and 3.0 Omni on one page, and fal's naming hid the split further by
 putting both under `kling-video/{v3,o3}/…` with one call shape. Officially they
@@ -574,7 +587,7 @@ are separate endpoints:
 
 | `model_name` | path | |
 |---|---|---|
-| `kling-v3` | `/v1/videos/image2video` | the default |
+| `kling-v3` | `/v1/videos/text2video` | the default |
 | `kling-v3-omni` | `/v1/videos/omni-video/` | reference-driven tier |
 
 ### What the move off fal cost, and what it bought
@@ -628,7 +641,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-239 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+231 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting
@@ -822,12 +835,11 @@ Two alternatives, neither needed if the above works:
 - **Caption timing is per shot, not per beat.** Captions land at shot boundaries.
   Beat-level timing would need `pacing.cut_times` and the estimated BPM wired into
   `assemble`; neither is done, so the schema does not pretend otherwise.
-- **Creator consistency currently rides on the keyframe alone.** The official
-  API takes a character reference as an `element_id` minted by a separate Element
-  Management endpoint, whose request schema is not verified here, so
-  `supports_persona` is `false` and `--persona` raises rather than being dropped
-  in silence. Identity still carries through the keyframe prompt, which is the
-  weaker mechanism. Offline the creator varies through prompt tokens only.
+- **Creator consistency holds within a multi-shot request, not across them.**
+  Every cut in one generation shares a person; a montage needing three requests
+  gets three. What would pin one face everywhere is `element_list`, whose ids come
+  from an Element Management endpoint this repo could not verify. There is no
+  image input at all under text-to-video, which is why there is no `--persona`.
 - **Runs are in-process.** `styleloom batch` blocks until done, and killing it loses
   the current run — earlier completed runs are already on disk. Fine for a
   single-operator harness.

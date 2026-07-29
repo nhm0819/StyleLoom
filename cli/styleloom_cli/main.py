@@ -116,8 +116,8 @@ def doctor(
         )
     if video_provider == "kling":
         line(True, "  kling host", settings.kling_base_url)
-        line(True, "  kling models", f"{settings.kling_t2i_model} / "
-             f"{settings.kling_i2v_model} ({settings.kling_mode})")
+        line(True, "  kling model",
+             f"{settings.kling_t2v_model} ({settings.kling_mode})")
         # std renders 720p and pro 1080p. Asking for a larger frame than the tier
         # produces does not fail -- it upscales, and the output looks soft for
         # reasons nothing else reports.

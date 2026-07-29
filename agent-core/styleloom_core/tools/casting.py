@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..events import EventKind
 from ..sampling import ENTROPY_SOURCE, load_pool, new_rng, sample_with_recency
 from ..schema import Brief, CastChoice, Casting, Choice, StyleSchema
 from .registry import tool
@@ -46,23 +45,10 @@ def _to_choice(entry: dict) -> CastChoice:
     )
 
 
-def creator_portrait_prompt(creator: CastChoice, style: StyleSchema) -> str:
-    """A neutral reference portrait, deliberately without the scene.
-
-    The reference image exists to fix identity, so including the background would
-    fight the per-shot setting prompt rather than support it.
-    """
-    return (
-        f"{creator.prompt}. Head and shoulders portrait, facing camera, "
-        f"neutral seamless background, even soft lighting, photorealistic, "
-        f"{style.look.grade} colour grade, vertical 9:16 framing."
-    )
-
-
 @tool("casting", reads=("style", "brief"), writes="casting")
 def casting(ctx: Context, session: RunSession) -> Casting:
     """Cast the on-screen creator and the location for this run."""
-    style = session.get("style", StyleSchema)
+    session.get("style", StyleSchema)  # declared dependency
     session.get("brief", Brief)  # declared dependency; casting is topic-agnostic
 
     settings = ctx.settings
@@ -97,21 +83,13 @@ def casting(ctx: Context, session: RunSession) -> Casting:
         entropy_source=ENTROPY_SOURCE,
     )
 
-    # Identity anchor, but only where it can be used. Generating a portrait for a
-    # provider that ignores reference images would bill a keyframe for nothing.
-    if ctx.video.supports_persona and session.inputs.persona_ref is None:
-        try:
-            result.creator_ref = ctx.video.keyframe(
-                creator_portrait_prompt(creator, style),
-                session.workspace("cast") / "creator.jpg",
-            )
-        except Exception as exc:  # noqa: BLE001 - degrade, do not fail the run
-            ctx.emit(
-                EventKind.WARNING,
-                session.run_id,
-                stage="casting",
-                message=f"creator reference portrait failed, continuing without it: {exc}",
-            )
+    # No reference portrait is generated. Under text-to-video there is no image
+    # input to feed one into, and there is no image endpoint to make one with.
+    # The creator reaches the output as the description below, inside every shot
+    # prompt -- which fixes the person's *type* across cuts, not their face. A
+    # multi-shot request holds one face across the cuts it contains; across
+    # windows it does not. That limit is real and recorded in the README rather
+    # than papered over with a portrait nothing could consume.
 
     # Recorded immediately, so the next run in a batch sees these choices even if
     # this run later fails during render.

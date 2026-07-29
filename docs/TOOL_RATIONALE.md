@@ -9,9 +9,8 @@ Why each choice was made, including the alternatives that were rejected.
 | **ffmpeg** | cut, trim, concat, burn captions | Cut timing and caption position are deterministic operations; a model does them worse than a `for` loop and gives up reproducibility. |
 | **OpenCV** | measure pacing, colour, keyframes | Style properties have to be numbers to be reproducible *and* checkable in QC. One decode pass yields cuts, colour stats and keyframes together. |
 | **Claude Sonnet 5** (Anthropic) | brief, outline, hook candidates, style naming | Vision-capable, so reference keyframes go in alongside the measured stats; reliable structured JSON under an explicit schema. |
-| **KlingAI Open Platform** | keyframe + image-to-video | Called directly rather than through an aggregator. One vendor account covers both stages, and `multi_shot` — the storyboard that lowers the billed floor from 3s to 1s per cut — is a first-class part of its own schema rather than a wrapper's translation of it. |
-| **Kling Image v3** | text-to-image keyframes | Same account as the video model. Takes `aspect_ratio` rather than pixel dimensions, so 9:16 is requested directly rather than cropped afterwards. |
-| **Kling Video v3** | image-to-video, **default** | `multi_shot` storyboards, 3s floor, 15s ceiling. `mode: std\|pro` selects the quality tier in the request, so switching tiers is a setting rather than a different endpoint. |
+| **KlingAI Open Platform** | text-to-video | Called directly rather than through an aggregator, and `multi_shot` — the storyboard that lowers the billed floor from 3s to 1s per cut — is a first-class part of its own schema rather than a wrapper's translation of it. |
+| **Kling Video v3** | text-to-video, **default** | Takes `aspect_ratio` rather than pixel dimensions, so 9:16 is requested directly rather than cropped afterwards. `multi_shot` storyboards, 3s floor, 15s ceiling. `mode: std\|pro` selects the quality tier in the request, so switching tiers is a setting rather than a different endpoint. |
 | **pydantic** | data contracts, settings | Every stage artifact is written to disk and read back; validation at the boundary is the contract. Env-driven settings come free. |
 | **Typer** | CLI | Type hints *are* the parser, so the command signature and its validation are one declaration instead of two. |
 | **pytest** | tests | 137 tests, no network, no keys. |
@@ -37,21 +36,38 @@ fixed position).
 
 ---
 
-## Two-stage render: text → keyframe → motion
+## One-stage render: text → clip
 
-`tools/render.py` does not call text-to-video directly. It generates a still
-keyframe, then animates it.
+`tools/render.py` calls text-to-video directly. An earlier revision generated a
+still keyframe and animated it, on the reasoning recorded below — kept because
+the reasoning was sound and the mistake was in a premise, which is worth seeing:
 
-Shot-to-shot consistency of colour grade and subject identity is what makes a set
-of clips read as one channel. Image models are cheaper to iterate, easier to
-constrain with a reference image, and produce a *fixed* look that the video model
-then only has to move. Straight text-to-video re-rolls the look on every shot, and
-by shot six the grade has drifted. Cost matters too: a rejected keyframe is far
-cheaper to discard than a rejected clip.
+> Shot-to-shot consistency of colour grade and subject identity is what makes a
+> set of clips read as one channel. Image models are cheaper to iterate, easier to
+> constrain with a reference image, and produce a *fixed* look that the video model
+> then only has to move. Straight text-to-video re-rolls the look on every shot,
+> and by shot six the grade has drifted.
 
-Trade-off: this forfeits the native multi-shot narrative generation that newer
-models offer. If you want one model to handle a whole sequence, replace
-`BaseVideoProvider` — the interface is two methods.
+The premise that failed is "a fixed look". Every cut generated **its own**
+keyframe from **its own** text, so nothing was fixed across cuts — shot 6 re-rolled
+the look exactly as text-to-video would, having paid an extra generation for the
+privilege. The keyframe was doing real work within one cut, fixing composition
+before motion was bought, and none at all between cuts.
+
+What would have made the premise true is one keyframe reused as every cut's start
+image, or a character reference pinned by `element_list`. The first is not what the
+code did; the second needs an Element Management call this repo could not verify.
+
+So the two calls per cut were buying single-shot composition control, and the
+consistency argument was not being served. Text-to-video with `multi_shot` serves
+it better: every cut inside one request comes from one generation, so the model
+holds the person and the room across the cuts it makes itself. A 3-cut
+talking-head is one request and one person; a 14-cut montage is three requests and
+three people, against the fourteen it used to be.
+
+Trade-off: composition control within a single cut is weaker, and there is no
+cheap still to reject before paying for motion. Both are real. Neither was the
+thing the two-stage design was defended on.
 
 ---
 

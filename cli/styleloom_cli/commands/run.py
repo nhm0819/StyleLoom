@@ -44,9 +44,6 @@ def run(
                     help="이미지 또는 영상 입력. 파일명만 주면 "
                          "<data-dir>/uploads/ 에서 찾습니다")] = None,
     bgm: Annotated[Path | None, typer.Option(help="배경음악 (uploads/ 조회 동일)")] = None,
-    persona: Annotated[Path | None, typer.Option(
-        help="크리에이터 참조 이미지 (Kling v3 계열에서만 반영, "
-             "uploads/ 조회 동일)")] = None,
     lang: Annotated[str, typer.Option(help="출력 언어")] = "ko",
     no_qc: Annotated[bool, typer.Option("--no-qc", help="정합성 검사 생략")] = False,
     data_dir: Annotated[Path | None, typer.Option("--data-dir")] = None,
@@ -65,7 +62,7 @@ def run(
         abort("need --text or --file")
     ctx = make_context(data_dir=data_dir, llm=llm, video=video, render_mode=render_mode)
     inputs = RunInputs(
-        text=text, file_path=file, bgm=bgm, persona_ref=persona, language=lang
+        text=text, file_path=file, bgm=bgm, language=lang
     )
     try:
         record = run_once(ctx, style_id, inputs, plan=build_plan(include_qc=not no_qc))

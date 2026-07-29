@@ -143,9 +143,9 @@ def test_every_shot_prompt_carries_the_style_tokens(ctx, style, brief, outline):
 
     assert len(board.shots) >= 3
     for shot in board.shots:
-        assert style.look.grade in shot.image_prompt
-        assert "9:16" in shot.image_prompt
-        assert "No text overlay" in shot.motion_prompt
+        assert style.look.grade in shot.scene_prompt
+        assert "9:16" in shot.scene_prompt
+        assert "No text or captions" in shot.motion_prompt
 
 
 def test_shot_indices_are_contiguous(ctx, style, brief, outline):
@@ -201,7 +201,7 @@ def test_adjacent_shots_do_not_ask_for_identical_images(ctx, style, brief, outli
     board = storyboard_tool.storyboard(ctx, session)
 
     for previous, current in zip(board.shots, board.shots[1:], strict=False):
-        assert current.image_prompt != previous.image_prompt
+        assert current.scene_prompt != previous.scene_prompt
 
 
 def test_distinct_frames_survives_a_single_move_style(ctx, style, brief, outline):
@@ -214,7 +214,7 @@ def test_distinct_frames_survives_a_single_move_style(ctx, style, brief, outline
     board = storyboard_tool.storyboard(ctx, session)
 
     for previous, current in zip(board.shots, board.shots[1:], strict=False):
-        assert current.image_prompt != previous.image_prompt
+        assert current.scene_prompt != previous.scene_prompt
 
 
 # --- video ingest ----------------------------------------------------------- #
