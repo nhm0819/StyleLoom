@@ -143,9 +143,49 @@ def test_every_shot_prompt_carries_the_style_tokens(ctx, style, brief, outline):
 
     assert len(board.shots) >= 3
     for shot in board.shots:
+        # The grade rides in both forms: a continuation entry inherits the person
+        # from the entry above it, but an unstated grade drifts.
         assert style.look.grade in shot.scene_prompt
-        assert "9:16" in shot.scene_prompt
-        assert "No text or captions" in shot.motion_prompt
+        assert style.look.grade in shot.continuation_prompt
+        # No framing token. `aspect_ratio` is an explicit request field under
+        # text-to-video, so spelling "vertical 9:16" into a 512-character entry
+        # spends characters restating what the API already knows.
+        assert "vertical 9:16 framing" not in shot.scene_prompt
+        # No burnt-in-caption instruction either: negative_prompt is one field per
+        # request, against 47 characters in every one of six entries.
+        assert "No text or captions" not in shot.motion_prompt
+        assert "no text" not in shot.video_prompt.lower()
+
+
+def test_a_continuation_entry_drops_identity_but_keeps_the_grade(
+    ctx, style, brief, outline
+):
+    """Every entry in a multi-shot request is read by one generation, so the
+    presenter and the room only need saying once. Repeating them cost 260 of the
+    512 characters an entry gets."""
+    session = make_session(ctx, style, text="주제")
+    session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
+    cast = casting_tool.casting(ctx, session)
+    session.artifacts["casting"] = cast
+    board = storyboard_tool.storyboard(ctx, session)
+
+    for shot in board.shots:
+        assert cast.creator.prompt not in shot.continuation_prompt
+        assert "Same subject and location" in shot.continuation_prompt
+        assert len(shot.continuation_video_prompt) < len(shot.video_prompt)
+
+
+def test_the_camera_move_is_stated_once_per_entry(ctx, style, brief, outline):
+    """Regression: the move sat in the scene line and again in the motion clause,
+    so an entry read 'CU shot, static_phone_mount. ... static_phone_mount.'"""
+    session = make_session(ctx, style, text="주제")
+    session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
+    session.artifacts["casting"] = casting_tool.casting(ctx, session)
+    board = storyboard_tool.storyboard(ctx, session)
+
+    for shot in board.shots:
+        assert shot.video_prompt.count(shot.camera_move) == 1
+        assert shot.continuation_video_prompt.count(shot.camera_move) == 1
 
 
 def test_shot_indices_are_contiguous(ctx, style, brief, outline):
@@ -318,15 +358,22 @@ def test_multi_shot_prompts_fit_the_storyboard_entry_limit(ctx, style, brief, ou
 
 def test_per_shot_prompts_are_not_squeezed(ctx, style, brief, outline):
     """The budget is a multi-shot constraint. Applying it everywhere would throw
-    away style context that the top-level field has room for."""
+    away style context the top-level field has room for.
+
+    Asserted as "the full token string survives intact" rather than by comparing
+    two builds: the hook is sampled, so two storyboards of the same style differ
+    in length for reasons that have nothing to do with the budget.
+    """
     session = make_session(ctx, style, text="겨울철 건조한 피부 관리 루틴 총정리")
     session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
-    session.artifacts["casting"] = casting_tool.casting(ctx, session)
+    cast = casting_tool.casting(ctx, session)
+    session.artifacts["casting"] = cast
     ctx.settings.render_mode = "per_shot"
 
     board = storyboard_tool.storyboard(ctx, session)
 
-    assert max(len(s.video_prompt) for s in board.shots) > ctx.video.max_shot_prompt_chars
+    full = storyboard_tool.style_tokens(style, cast)
+    assert all(full in shot.scene_prompt for shot in board.shots)
 
 
 def test_the_budget_drops_whole_clauses_from_the_tail(ctx, style, brief):

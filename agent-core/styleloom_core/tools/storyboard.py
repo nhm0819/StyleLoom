@@ -25,6 +25,20 @@ if TYPE_CHECKING:
 MIN_AVG_SHOT_SEC = 0.3
 
 
+def look_tokens(style: StyleSchema) -> str:
+    """Grade only, without the presenter or the location.
+
+    Split out because these are the properties QC measures, so they belong in
+    every storyboard entry even when identity does not: a continuation shot
+    inherits the person from the entry above it, but a grade left unsaid drifts.
+    """
+    look = style.look
+    return (
+        f"{look.grade} colour grade, "
+        f"saturation {look.saturation:.2f}, contrast {look.contrast:.2f}"
+    )
+
+
 def style_tokens(style: StyleSchema, casting: Casting, budget: int = 0) -> str:
     """The look, the presenter and the location, compressed into prompt tokens.
 
@@ -136,6 +150,7 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
     # the long one -- which is the only one that matters here.
     limit = ctx.video.max_shot_prompt_chars if ctx.settings.render_mode == "multi_shot" else 0
     tokens = style_tokens(style, casting)
+    looks = look_tokens(style)
 
     def fit(scene: str, motion: str) -> str:
         """Shrink the shared tokens until scene + motion fits the entry limit."""
@@ -162,10 +177,9 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
             f"{style.hook_style.shot_size} shot, {move}. {tokens}. "
             "Opening shot of a short-form video, immediately legible."
         )
-        hook_motion = (
-            f"{move}, fast and attention-grabbing. "
-            "No text or captions rendered in the footage."
-        )
+        # The camera move is already in the scene line, and "no captions" now
+        # travels once in negative_prompt rather than in all six entries.
+        hook_motion = "Fast and attention-grabbing."
         shots.append(
             Shot(
                 index=len(shots),
@@ -184,6 +198,10 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                 # to the QC drift check.
                 scene_prompt=fit(hook_scene, hook_motion),
                 motion_prompt=hook_motion,
+                continuation_prompt=(
+                    f"{hook.selected.visual}. {style.hook_style.shot_size} shot, "
+                    f"{move}. Same subject and location. {looks}."
+                ),
             )
         )
 
@@ -201,9 +219,12 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                 f"{beat.content}. Subject of: {topic}. "
                 f"{sizes[j]} shot, {move}. {tokens}."
             )
-            body_motion = (
-                f"{move}. No text or captions rendered in the footage."
-            )
+            # Not the move: that is already in the scene line above, and a
+            # storyboard entry reading "CU shot, static_phone_mount. ...
+            # static_phone_mount." spends characters saying it twice. What the
+            # motion clause is for is how the shot plays, which the beat text
+            # carries.
+            body_motion = "Natural continuous motion, no cut inside the shot."
             shots.append(
                 Shot(
                     index=len(shots),
@@ -215,6 +236,10 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                     caption=beat.content if j == 0 else "",
                     scene_prompt=fit(body_scene, body_motion),
                     motion_prompt=body_motion,
+                    continuation_prompt=(
+                        f"{beat.content}. {sizes[j]} shot, {move}. "
+                        f"Same subject and location. {looks}."
+                    ),
                 )
             )
 

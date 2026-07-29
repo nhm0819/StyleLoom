@@ -580,6 +580,19 @@ room across the cuts it makes itself. A 3-cut talking-head is one request and
 therefore one person; a 14-cut montage splits into three and is three people —
 better than the fourteen it used to be, and not the same as one.
 
+**Only the first entry in a window establishes the subject.** All six entries of
+a `multi_prompt` request are read by one generation, so repeating the presenter
+and the room in each of them spent 260 of the 512 characters an entry gets on
+something the model had already been told. Continuation entries say "same subject
+and location" and restate only the grade, which QC measures and which drifts if
+left unsaid. Three other repetitions went with it: the burnt-in-caption
+instruction moved to `negative_prompt` (one field per request instead of 47
+characters times six), the camera move stopped being written in both the scene
+line and the motion clause, and the framing token went entirely because
+`aspect_ratio` is an explicit request field. Continuation entries went from ~509
+characters to ~180, and the lead entry now keeps `contrast` instead of dropping
+it to fit.
+
 **Prompts are budgeted, and the two limits are five times apart.** A top-level
 `prompt` takes ~2500 characters; a single entry inside `multi_prompt` takes 512.
 The prompts this system builds run 590–700, so `per_shot` fits comfortably and
@@ -650,7 +663,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-234 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+236 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting

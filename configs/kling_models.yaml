@@ -104,7 +104,12 @@ text_to_video:
     defaults:
       sound: "off"                    # captions are burned in and the reference
                                       # set has no dialogue; audio is billed extra
-      negative_prompt: ""
+      # Captions are burned in by ffmpeg afterwards, so any the model renders are
+      # duplicates in the wrong font. This belongs here rather than as "no text
+      # overlay" inside every storyboard entry: it is one field per request
+      # instead of 47 characters times six, and a negative instruction sitting in
+      # a positive prompt is the weaker way to give it.
+      negative_prompt: "text overlay, subtitles, captions, watermark, logo"
 
   kling-v3-omni:
     # POST /v1/videos/omni-video/   verified -- a different path, not a different

@@ -214,6 +214,15 @@ class Shot(BaseModel):
     # cut came out wrong is much easier when those are not fused.
     scene_prompt: str
     motion_prompt: str
+    # The same cut written for an entry that is not first in its multi-shot
+    # request. Identity and location are dropped -- the entry above it in the same
+    # generation already established them -- and only the grade is restated.
+    #
+    # Stored rather than derived because the full and short forms are built from
+    # the same pieces at storyboard time, and having both in storyboard.json is
+    # what makes it possible to read a request back and see which form each cut
+    # was sent as.
+    continuation_prompt: str = ""
 
     @property
     def video_prompt(self) -> str:
@@ -223,6 +232,14 @@ class Shot(BaseModel):
         heavily and the grade is the part this system is judged on reproducing.
         """
         return f"{self.scene_prompt} {self.motion_prompt}".strip()
+
+    @property
+    def continuation_video_prompt(self) -> str:
+        """What a non-leading storyboard entry carries. Falls back to the full
+        form, so a Shot built without one still renders."""
+        if not self.continuation_prompt:
+            return self.video_prompt
+        return f"{self.continuation_prompt} {self.motion_prompt}".strip()
 
 
 class Storyboard(BaseModel):

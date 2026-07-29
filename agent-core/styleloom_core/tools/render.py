@@ -177,10 +177,18 @@ def _render_multi_shot(
         # there is no such anchor, so a 14-cut montage is three people rather than
         # fourteen -- better than per_shot, and not the same as one.
         try:
+            # Only the first entry establishes who and where. The rest say "same
+            # subject and location" and restate the grade, because all six are
+            # read by one generation -- repeating 260 characters of presenter and
+            # room in every entry spends the 512-character budget on something
+            # the model has already been told.
             clip = ctx.video.generate_sequence(
                 [
-                    MotionShot(prompt=s.video_prompt, duration=s.duration_sec)
-                    for s in shots
+                    MotionShot(
+                        prompt=(s.video_prompt if i == 0 else s.continuation_video_prompt),
+                        duration=s.duration_sec,
+                    )
+                    for i, s in enumerate(shots)
                 ],
                 out_dir / f"win_{w:02d}.mp4",
             )
