@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from typing import TYPE_CHECKING
 
@@ -64,6 +65,26 @@ def ensure_distinct_frames(shots: list[Shot]) -> list[Shot]:
         if current.image_prompt == previous.image_prompt:
             current.image_prompt += " Alternate angle on the same moment."
     return shots
+
+
+def shot_count_for(beat_sec: float, avg_shot_sec: float) -> int:
+    """How many cuts to spend on a beat so the result sits closest to the style.
+
+    A beat rarely divides evenly into the reference's cut length, so the count is
+    a choice between the two neighbouring integers -- and they are not equally
+    good. Rounding to nearest picks the closer *count*, which is not the same as
+    the closer *pacing*: a 3s beat at 1.21s per cut rounds to 2 cuts of 1.50s,
+    when 3 cuts of 1.00s sit nearer the target. That is 24% off instead of 17%,
+    on the one number the whole schema exists to hold.
+
+    So both candidates are measured against the thing being reproduced. This was
+    invisible while the QC tolerance on avg_shot_sec was 0.6s absolute, which on
+    a 1.2s reference accepted anything from 0.6s to 1.8s.
+    """
+    target = max(avg_shot_sec, MIN_AVG_SHOT_SEC)
+    ideal = beat_sec / target
+    candidates = {max(1, math.floor(ideal)), max(1, math.ceil(ideal))}
+    return min(candidates, key=lambda n: abs(beat_sec / n - target))
 
 
 def sizes_for(style: StyleSchema, count: int, rng: random.Random) -> list[ShotSize]:

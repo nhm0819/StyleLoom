@@ -21,11 +21,25 @@ if TYPE_CHECKING:
 
 PASS_THRESHOLD = 0.7
 
-# (name, style attribute path, tolerance). Tolerances are set where a human would
-# stop noticing the difference, not where the mock happens to pass.
+# Tolerances are set where a human would stop noticing the difference, not where
+# the mock happens to pass.
+#
+# The two timing checks are RELATIVE, because this is a short-form system and a
+# fixed second is a different quantity at every length. The absolute values these
+# replace were 0.6s on avg_shot_sec and 6.0s on total_duration, which on the
+# 10.7s ASMR reference meant +-78% and +-56%: a video with 1.3s cuts passed as a
+# reproduction of one with 0.76s cuts, and pacing is the property the whole
+# schema exists to hold. Measured against real runs those tolerances sat 86x and
+# 60x above the actual error, so they were not protecting anything.
+#
+# (fraction of the target, absolute floor). The floor keeps a very short cut from
+# demanding frame-accuracy that cut detection cannot resolve.
+RELATIVE_TOLERANCES = {
+    "avg_shot_sec": (0.15, 0.08),
+    "total_duration": (0.10, 0.40),
+}
+
 TOLERANCES = {
-    "avg_shot_sec": 0.6,
-    "total_duration": 6.0,
     "saturation": 0.18,
     "contrast": 0.20,
     "warmth": 0.12,
@@ -38,6 +52,14 @@ TOLERANCES = {
     # where a viewer starts to feel a cut land late at short-form pacing.
     "cut_timing_drift": 0.35,
 }
+
+
+def tolerance_for(name: str, target: float) -> float:
+    """Tolerance for one check, scaled to the target where the check is a duration."""
+    if name in RELATIVE_TOLERANCES:
+        fraction, floor = RELATIVE_TOLERANCES[name]
+        return round(max(floor, abs(target) * fraction), 3)
+    return TOLERANCES[name]
 
 
 def cut_drift(requested: list[float], detected: list[float]) -> float:
@@ -86,9 +108,9 @@ def qc(ctx: Context, session: RunSession) -> QCReport:
 
     checks = [
         check("avg_shot_sec", style.pacing.avg_shot_sec, m["avg_shot_sec"],
-              TOLERANCES["avg_shot_sec"]),
+              tolerance_for("avg_shot_sec", style.pacing.avg_shot_sec)),
         check("total_duration", style.total_duration, m["duration"],
-              TOLERANCES["total_duration"]),
+              tolerance_for("total_duration", style.total_duration)),
         check("saturation", style.look.saturation, m["saturation"],
               TOLERANCES["saturation"]),
         check("contrast", style.look.contrast, m["contrast"], TOLERANCES["contrast"]),

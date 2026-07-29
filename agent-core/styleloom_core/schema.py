@@ -235,13 +235,28 @@ class ClipSegment(BaseModel):
 
     path: Path
     shot_indices: list[int]
-    # What was asked for. In multi_shot mode the delivered cuts may differ, which
-    # is what the QC drift check measures -- so the request has to be recorded.
+    # The storyboard's intent. In multi_shot mode the delivered cuts may differ,
+    # which is what the QC drift check measures -- so the request has to be
+    # recorded separately from what the endpoint was actually asked to run.
     requested_durations: list[float] = Field(default_factory=list)
+    # What the endpoint was actually asked to run, after it quantised the request.
+    # Kling's per-cut durations are whole seconds, so a 0.6s cut is asked for as
+    # 1s and the cut inside the returned clip lands at 1s. Captions have to be
+    # placed against these or they drift away from the cuts they belong to, a
+    # little further with every shot.
+    #
+    # Empty means identical to `requested_durations`, which is the per_shot case:
+    # each clip is trimmed to the exact cut length before it gets here.
+    billed_durations: list[float] = Field(default_factory=list)
 
     @property
     def is_multi_shot(self) -> bool:
         return len(self.shot_indices) > 1
+
+    @property
+    def caption_durations(self) -> list[float]:
+        """Where captions go: the timeline the endpoint was given, not the ideal."""
+        return self.billed_durations or self.requested_durations
 
 
 class RenderResult(BaseModel):

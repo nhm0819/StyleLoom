@@ -118,6 +118,19 @@ def doctor(
         line(True, "  kling host", settings.kling_base_url)
         line(True, "  kling models", f"{settings.kling_t2i_model} / "
              f"{settings.kling_i2v_model} ({settings.kling_mode})")
+        # std renders 720p and pro 1080p. Asking for a larger frame than the tier
+        # produces does not fail -- it upscales, and the output looks soft for
+        # reasons nothing else reports.
+        tier_height = 1080 if settings.kling_mode == "pro" else 720
+        short_side = min(settings.width, settings.height)
+        if short_side > tier_height:
+            typer.secho(
+                f"      output is {settings.width}x{settings.height} but "
+                f"kling_mode={settings.kling_mode!r} renders {tier_height}p -- "
+                "the result is upscaled. Set STYLELOOM_KLING_MODE=pro, or lower "
+                "the output size.",
+                fg="yellow",
+            )
 
     if llm_provider == "mock" or video_provider == "mock":
         typer.secho(

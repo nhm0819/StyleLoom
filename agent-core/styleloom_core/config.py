@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     # The quality tier, which on the official API is a request field rather than
     # part of the endpoint. `std` is the default because the default is what an
     # evaluation run costs; `pro` is the same parameters at a higher rate.
+    #
+    # It is also a resolution choice: std renders 720p and pro 1080p. That pairs
+    # with the 720x1280 output below, so the default combination generates at the
+    # size it delivers. Raising width/height to 1080x1920 without also switching
+    # to `pro` upscales a 720p render, which `styleloom doctor` flags.
     kling_mode: str = "std"  # std | pro
 
     # Generation is asynchronous, so these two bound a wait rather than a request.
@@ -104,6 +109,14 @@ class Settings(BaseSettings):
     kling_max_concurrency: int = 1
 
     # --- Output ------------------------------------------------------------
+    # 9:16 at 720p30, which is the short-form baseline every vertical platform
+    # accepts without re-encoding. Portrait is the default rather than a flag
+    # because this system exists to reproduce short-form references; landscape
+    # still works (the Kling provider maps any size onto the nearest ratio the
+    # API offers), it is just not what the defaults are tuned for.
+    #
+    # 30fps rather than 60: the reference set is 30, the video model delivers 30,
+    # and a 60fps container holding 30fps content only doubles the file.
     width: int = 720
     height: int = 1280
     fps: int = 30

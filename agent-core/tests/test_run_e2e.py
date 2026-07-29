@@ -226,3 +226,67 @@ def test_a_persona_is_accepted_when_the_provider_can_use_it(ctx, style, tmp_path
 
     record = run_once(ctx, style.style_id, RunInputs(text=INPUTS[0], persona_ref=face))
     assert record.status is RunStatus.DONE, record.error
+
+
+def test_windows_are_packed_against_delivered_length_not_requested():
+    """Regression: four 3.6s cuts request 14.4s, which fits Kling's 15s window,
+    and deliver 16s, which does not -- the endpoint rejects the whole request
+    rather than truncating it, so the window has to be measured after rounding.
+    """
+    from styleloom_core.schema import Shot
+    from styleloom_core.tools.render import split_windows
+
+    shots = [
+        Shot(index=i, duration_sec=3.6, image_prompt="i", motion_prompt="m",
+             caption="c", shot_size="CU", role="body", camera_move="static",
+             action="a")
+        for i in range(1, 5)
+    ]
+    quantised = split_windows(shots, 15.0, 6, billed=lambda s: float(max(1, round(s + 0.5))))
+    assert all(
+        sum(max(1, round(s.duration_sec + 0.5)) for s in window) <= 15
+        for window in quantised
+    ), "a window still exceeds the endpoint limit once durations are rounded"
+    assert len(quantised) == 2
+
+
+def test_captions_follow_the_timeline_the_endpoint_was_given():
+    """Regression: cues were placed against the storyboard's pre-quantisation
+    durations while the cuts landed on the quantised ones, so every caption sat a
+    little further from its cut -- three seconds out by the end of a 14-cut
+    montage."""
+    from styleloom_core.schema import ClipSegment
+
+    segment = ClipSegment(
+        path=Path("seg.mp4"),
+        shot_indices=[1, 2, 3],
+        requested_durations=[0.6, 0.6, 0.6],
+        billed_durations=[1.0, 1.0, 1.0],
+    )
+    assert segment.caption_durations == [1.0, 1.0, 1.0]
+    # per_shot trims to the exact cut length, so there is nothing to correct.
+    exact = ClipSegment(
+        path=Path("s.mp4"), shot_indices=[1], requested_durations=[0.6]
+    )
+    assert exact.caption_durations == [0.6]
+
+
+@pytest.mark.parametrize(
+    "beat_sec,avg,expected_per",
+    [
+        (3.0, 1.208, 1.0),   # regression: round() gave 2 cuts of 1.50s
+        (4.0, 0.764, 0.8),
+        (5.0, 4.044, 5.0),   # one cut is genuinely closest
+    ],
+)
+def test_shot_count_lands_as_close_to_the_style_pacing_as_it_can(
+    beat_sec, avg, expected_per
+):
+    """The count is chosen by resulting pacing, not by rounding the count."""
+    from styleloom_core.tools.storyboard import shot_count_for
+
+    count = shot_count_for(beat_sec, avg)
+    assert round(beat_sec / count, 2) == expected_per
+    # Whichever integer is picked, no neighbour is closer to the target.
+    for other in (max(1, count - 1), count + 1):
+        assert abs(beat_sec / count - avg) <= abs(beat_sec / other - avg)

@@ -20,15 +20,19 @@ def cues_for(segment: ClipSegment, board: Storyboard) -> list[CaptionCue]:
     one shot and yields one cue spanning the clip; in multi_shot mode it holds
     several and yields a cue per cut. Either way `assemble` sees a list of cues.
 
-    The windows come from the *requested* durations. If a multi_shot endpoint drifts
-    from the timeline it was given, captions drift with it -- which is exactly why
+    The windows come from the durations the endpoint was actually asked to run,
+    which in per_shot mode are the requested ones and in multi_shot mode are those
+    durations after the endpoint quantised them. Using the pre-quantised figures
+    would walk every caption off its cut by a growing margin -- on a 14-cut
+    montage the last one lands three seconds early. If the endpoint then drifts
+    from the timeline it was given, captions drift with it, which is exactly why
     `qc` measures that drift rather than assuming it is zero.
     """
     by_index = {s.index: s for s in board.shots}
     cues: list[CaptionCue] = []
     elapsed = 0.0
     for index, duration in zip(
-        segment.shot_indices, segment.requested_durations, strict=True
+        segment.shot_indices, segment.caption_durations, strict=True
     ):
         shot = by_index.get(index)
         if shot is not None and shot.caption.strip():

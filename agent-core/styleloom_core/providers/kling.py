@@ -299,16 +299,42 @@ class KlingVideoProvider(BaseVideoProvider):
         return payload
 
     def _duration_string(self, duration: float) -> str:
+        """Whole seconds for a single-cut request, always rounded UP.
+
+        `duration` is only legal as an integer, and `render_shot` trims the result
+        down to the cut length afterwards -- but it only trims when the clip is
+        longer, because a short clip cannot be extended. Rounding to nearest would
+        buy 4s for a 4.4s cut, and nothing downstream would notice: the clip is
+        returned untrimmed and the timeline is quietly 0.4s short.
+
+        `round()` would be doubly wrong here, being banker's rounding: round(4.5)
+        is 4, so exactly-half cuts lose the most.
+        """
         spec = self.i2v
-        seconds = int(round(max(duration, spec.get("min_duration", 1))))
+        wanted = max(duration, float(spec.get("min_duration", 1)))
+        seconds = math.ceil(wanted - 1e-9)
         seconds = min(seconds, int(spec.get("max_duration", seconds)))
         choices = spec.get("duration_choices")
         if choices:
-            # Round UP to a legal value: buying more footage and trimming it is
-            # recoverable, buying less is not.
             longer = [c for c in sorted(choices) if c >= seconds]
             seconds = longer[0] if longer else max(choices)
         return str(seconds)
+
+    def shot_billed_duration(self, seconds: float) -> float:
+        """One cut inside a multi-shot request, to whole seconds with a floor of 1.
+
+        Nearest rather than up, unlike `_duration_string`, and the difference is
+        not an oversight. A multi-shot generation comes back as one clip that is
+        never trimmed, so rounding down shortens a cut rather than producing an
+        untrimmable file -- and nearest is what minimises total drift across the
+        storyboard. Rounding up here would stretch every video instead.
+
+        floor(x + 0.5) rather than round(), which is banker's: round(2.5) is 2,
+        so a 2.5s cut would quietly lose half a second.
+        """
+        if self.i2v.get("multi_prompt_duration_type") == "integer_string":
+            return float(max(1, math.floor(seconds + 0.5)))
+        return seconds
 
     def build_animate_payload(
         self, image_b64: str, motion_prompt: str, duration: float, persona_b64: str | None
@@ -358,17 +384,14 @@ class KlingVideoProvider(BaseVideoProvider):
 
         entries = []
         for index, shot in enumerate(shots, start=1):
+            # Through shot_billed_duration, not a second copy of the rule: the
+            # caller packs windows with that method, and a payload that rounded
+            # differently would overflow the window the caller just verified.
+            billed = self.shot_billed_duration(shot.duration)
             if spec.get("multi_prompt_duration_type") == "integer_string":
-                # Per-shot duration is an integer with a floor of 1s, so a
-                # sub-second cut has no legal representation. Nearest second with a
-                # floor of 1 minimises drift; qc reports what the rounding cost
-                # rather than this pretending the timeline was honoured.
-                #
-                # floor(x + 0.5), not round(): round() is banker's rounding, so
-                # round(2.5) is 2 and a 2.5s cut would quietly lose half a second.
-                value: str | float = str(max(1, math.floor(shot.duration + 0.5)))
+                value: str | float = str(int(billed))
             else:
-                value = round(shot.duration, 2)
+                value = round(billed, 2)
             entry: dict = {"prompt": shot.prompt, "duration": value}
             if spec.get("multi_prompt_indexed"):
                 entry = {"index": index, **entry}

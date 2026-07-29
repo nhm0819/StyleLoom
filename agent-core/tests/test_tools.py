@@ -28,13 +28,30 @@ def make_session(ctx, style, **inputs):
 
 def test_outline_total_respects_the_reference_duration(ctx, style):
     """Regression: the outline passed the model's raw beat durations straight
-    through, so a 7s reference produced a 19s video."""
+    through, so a 7s reference produced a 19s video.
+
+    Asserted against the reference rather than against the floor constant. The
+    floor was 6.0s, which on a short-form reference is not a safety net but an
+    override: a 7.25s style with a 3s hook needs a 4.25s body and got 6s, so the
+    output ran 24% long and this test passed anyway because it was checking the
+    override rather than the style.
+    """
     session = make_session(ctx, style, text="주제")
     session.artifacts["brief"] = ingest_tool.ingest(ctx, session)
     result = outline_tool.outline(ctx, session)
 
-    body_budget = max(style.total_duration - style.hook_style.window_sec, 6.0)
-    assert sum(b.duration_sec for b in result.beats) == pytest.approx(body_budget, abs=0.6)
+    wanted = style.total_duration - style.hook_style.window_sec
+    assert wanted > outline_tool.MIN_BODY_BUDGET, (
+        "fixture no longer exercises the real path -- the floor is binding"
+    )
+    assert sum(b.duration_sec for b in result.beats) == pytest.approx(wanted, abs=0.6)
+
+
+def test_the_body_budget_floor_stays_below_short_form_references(ctx, style):
+    """The floor exists to stop a degenerate zero-length body, not to lengthen a
+    real reference. Short-form runs 7-15s, so anything near 6s overrules most of
+    them."""
+    assert outline_tool.MIN_BODY_BUDGET <= 2.0
 
 
 def test_outline_never_writes_the_hook(ctx, style):

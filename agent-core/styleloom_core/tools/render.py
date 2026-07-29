@@ -19,6 +19,7 @@ per_shot is the default because it is the verified path. multi_shot is opt-in.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -76,7 +77,10 @@ def render_shot(
 
 
 def split_windows(
-    shots: list[Shot], window_sec: float, max_shots: int = 0
+    shots: list[Shot],
+    window_sec: float,
+    max_shots: int = 0,
+    billed: Callable[[float], float] | None = None,
 ) -> list[list[Shot]]:
     """Group shots into generations that each fit inside one window.
 
@@ -88,20 +92,28 @@ def split_windows(
     0.76s per cut satisfies the duration limit and violates the count one, and
     the endpoint rejects the whole request rather than truncating it. `max_shots`
     of 0 means the endpoint states no count limit.
+
+    `billed` converts a requested duration into the length the endpoint will
+    actually run, because the window is measured against the latter. Kling
+    quantises per-cut durations to whole seconds, so four 3.6s cuts request 14.4s
+    -- inside the window -- and deliver 16s, which is outside it. Packing on the
+    requested figures builds a request the endpoint rejects whole.
     """
     if window_sec <= 0 and max_shots <= 0:
         return [list(shots)]
+    length = billed or (lambda seconds: seconds)
     windows: list[list[Shot]] = []
     current: list[Shot] = []
     elapsed = 0.0
     for shot in shots:
-        over_time = window_sec > 0 and elapsed + shot.duration_sec > window_sec
+        duration = length(shot.duration_sec)
+        over_time = window_sec > 0 and elapsed + duration > window_sec
         over_count = max_shots > 0 and len(current) >= max_shots
         if current and (over_time or over_count):
             windows.append(current)
             current, elapsed = [], 0.0
         current.append(shot)
-        elapsed += shot.duration_sec
+        elapsed += duration
     if current:
         windows.append(current)
     return windows
@@ -157,7 +169,10 @@ def _render_multi_shot(
     out_dir = session.workspace("shots")
     window_sec = ctx.video.max_shot_window_sec or FALLBACK_WINDOW_SEC
     windows = split_windows(
-        board.shots, window_sec, ctx.video.max_shots_per_request
+        board.shots,
+        window_sec,
+        ctx.video.max_shots_per_request,
+        billed=ctx.video.shot_billed_duration,
     )
 
     segments: list[ClipSegment] = []
@@ -193,6 +208,9 @@ def _render_multi_shot(
                 path=clip,
                 shot_indices=[s.index for s in shots],
                 requested_durations=[s.duration_sec for s in shots],
+                billed_durations=[
+                    ctx.video.shot_billed_duration(s.duration_sec) for s in shots
+                ],
             )
         )
 

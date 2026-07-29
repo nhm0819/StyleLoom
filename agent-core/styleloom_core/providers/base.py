@@ -92,6 +92,21 @@ class BaseVideoProvider:
         """
         return 0
 
+    def shot_billed_duration(self, seconds: float) -> float:
+        """How long one cut inside a multi-shot request actually runs.
+
+        Declared because the caller has to do arithmetic with it. Endpoints
+        quantise per-cut durations -- Kling's are integers with a floor of 1s --
+        and a window packed against `max_shot_window_sec` using the durations we
+        asked for will overflow the real limit once they are rounded. Four 3.6s
+        cuts request 14.4s and deliver 16s, and the endpoint rejects the request
+        rather than truncating it.
+
+        Identity by default: a provider that honours the duration it is given has
+        nothing to declare.
+        """
+        return seconds
+
     def animate_sequence(
         self,
         image_path: Path,

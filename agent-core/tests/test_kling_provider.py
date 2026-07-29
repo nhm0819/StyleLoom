@@ -248,3 +248,45 @@ def test_concurrency_comes_from_settings_not_the_spec():
     """Kling's ceiling is an account-tier property, so no per-model value in the
     spec file could be correct for every reader."""
     assert make_provider(kling_max_concurrency=4).max_concurrency == 4
+
+
+# --- duration quantisation ------------------------------------------------- #
+#
+# Two different rounding rules, and the difference is load-bearing. Regression:
+# both modes used round() to nearest, which is banker's rounding on top of being
+# the wrong direction for per_shot.
+
+
+@pytest.mark.parametrize("wanted", [3.4, 4.4, 4.5, 6.49, 10.01])
+def test_per_shot_never_buys_a_clip_shorter_than_the_cut(wanted):
+    """`render_shot` trims a long clip down and cannot extend a short one, so
+    rounding down leaves the timeline quietly short with nothing to notice it."""
+    sent = float(make_provider().build_animate_payload("B64", "p", wanted, None)["duration"])
+    assert sent >= wanted
+
+
+def test_per_shot_rounds_up_rather_than_to_nearest():
+    """4.4s asked for as 4s was a real bug: the clip came back 0.4s short and
+    passed straight through, because the trim only fires when the clip is long."""
+    payload = make_provider().build_animate_payload("B64", "p", 4.4, None)
+    assert payload["duration"] == "5"
+
+
+def test_multi_shot_rounds_to_nearest_not_up():
+    """The opposite rule, on purpose. A multi-shot clip is never trimmed, so
+    rounding up would stretch every video; nearest minimises total drift."""
+    payload = make_provider().build_sequence_payload(
+        "B64", [MotionShot("a", 4.4), MotionShot("b", 4.6)], None
+    )
+    assert [e["duration"] for e in payload["multi_prompt"]] == ["4", "5"]
+
+
+def test_the_payload_and_the_planner_agree_on_shot_length():
+    """`split_windows` packs against `shot_billed_duration`. If the payload
+    rounded differently the request would overflow the window just verified."""
+    provider = make_provider()
+    shots = [MotionShot("a", 0.4), MotionShot("b", 2.5), MotionShot("c", 4.4)]
+    payload = provider.build_sequence_payload("B64", shots, None)
+    assert [float(e["duration"]) for e in payload["multi_prompt"]] == [
+        provider.shot_billed_duration(s.duration) for s in shots
+    ]
