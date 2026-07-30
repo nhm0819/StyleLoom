@@ -10,7 +10,7 @@ from __future__ import annotations
 import collections
 
 import pytest
-from styleloom_core.errors import ConfigError
+from styleloom_core.errors import ConfigError, LLMError
 from styleloom_core.sampling import load_pool, new_rng, sample_with_recency
 from styleloom_core.schema import (
     HookCandidate,
@@ -185,6 +185,102 @@ def test_the_creator_description_reaches_every_shot_prompt(ctx, style, brief):
     cast = C.casting(ctx, make_session(ctx, style, brief))
     assert cast.creator.prompt
     assert cast.creator.id
+
+
+# --- specialisation ---------------------------------------------------------- #
+#
+# The draw alone is what made the output generic: a pool entry has to suit any
+# topic, so it is written neutrally, and neutral phrasing is what makes a frame
+# look like stock. The seed supplies variety, the brief supplies specificity.
+
+
+def test_the_description_is_specialised_away_from_the_pool_text(ctx, style, brief):
+    cast = C.casting(ctx, make_session(ctx, style, brief))
+    assert cast.creator.prompt != cast.creator.seed_prompt
+    assert cast.setting.prompt != cast.setting.seed_prompt
+
+
+def test_the_seed_survives_for_inspection(ctx, style, brief):
+    """`id` stays the pool entry's, so without `seed_prompt` the draw is
+    unrecoverable from casting.json and specialisation cannot be reviewed."""
+    path = ctx.settings.resolve_config(ctx.settings.casting_path)
+    seeds = {e["id"]: " ".join(e["prompt"].split()) for e in load_pool(path, C.CREATOR_KEY)}
+
+    cast = C.casting(ctx, make_session(ctx, style, brief))
+    assert cast.creator.seed_prompt == seeds[cast.creator.id]
+
+
+def test_the_brief_reaches_the_specialisation_and_the_raw_input_does_not(
+    ctx, style, brief
+):
+    """Casting adapts to what the video is about, not to casting instructions
+    typed by the user -- the choice stays the system's."""
+    seen = {}
+
+    def capture(**kwargs):
+        seen.update(kwargs)
+        return {}
+
+    ctx.llm.complete_json = capture  # type: ignore[method-assign]
+    session = make_session(ctx, style, brief, text="20대 남성 캐주얼로 해줘")
+    C.casting(ctx, session)
+
+    assert brief.topic in seen["user"]
+    assert brief.key_message in seen["user"]
+    assert "20대 남성 캐주얼로 해줘" not in seen["user"]
+
+
+def test_an_over_long_description_is_clamped_on_a_clause_boundary(ctx, style, brief):
+    """Stated in the prompt and enforced on the way back. Both descriptions are
+    carried in every shot prompt against a 512-character cap, so an unbounded one
+    is paid for by starving every shot's own action sentence."""
+    long = ", ".join(["a clause that runs on for a while"] * 12)
+    ctx.llm.complete_json = lambda **kw: {  # type: ignore[method-assign]
+        "creator": long,
+        "setting": long,
+    }
+    cast = C.casting(ctx, make_session(ctx, style, brief))
+
+    for choice in (cast.creator, cast.setting):
+        assert len(choice.prompt) <= C.MAX_CAST_CHARS
+        assert not choice.prompt.endswith(",")
+        assert choice.prompt.split(",")[-1].strip() == "a clause that runs on for a while"
+
+
+def test_a_missing_field_falls_back_to_the_drawn_description(ctx, style, brief):
+    ctx.llm.complete_json = lambda **kw: {"creator": "  "}  # type: ignore[method-assign]
+    cast = C.casting(ctx, make_session(ctx, style, brief))
+
+    assert cast.creator.prompt == cast.creator.seed_prompt
+    assert cast.setting.prompt == cast.setting.seed_prompt
+
+
+def test_an_llm_failure_degrades_to_the_draw(ctx, style, brief):
+    """The draw was the whole stage until now, so it is a complete casting on its
+    own. A specialisation that fails must not fail the run."""
+
+    def boom(**kwargs):
+        raise LLMError("no key")
+
+    ctx.llm.complete_json = boom  # type: ignore[method-assign]
+    cast = C.casting(ctx, make_session(ctx, style, brief))
+
+    assert cast.creator.prompt == cast.creator.seed_prompt
+    assert cast.creator.id in cast.creator_pool
+
+
+def test_specialisation_does_not_replace_the_draw_as_the_source_of_variety(
+    ctx, style, brief
+):
+    """A fixed specialisation still has to yield different castings across runs, or
+    the pool draw has quietly become decorative."""
+    ctx.llm.complete_json = lambda **kw: {  # type: ignore[method-assign]
+        "creator": "one fixed description",
+        "setting": "one fixed location",
+    }
+    session = make_session(ctx, style, brief)
+    ids = {C.casting(ctx, session).creator.id for _ in range(RUNS)}
+    assert len(ids) > 1
 
 
 def test_casting_makes_no_provider_calls(ctx, style, brief, monkeypatch):

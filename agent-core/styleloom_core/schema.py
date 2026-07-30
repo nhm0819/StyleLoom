@@ -187,6 +187,11 @@ class CastChoice(BaseModel):
     id: str
     label: str = ""
     prompt: str = ""
+    # What the pool said before this run specialised it against the brief. `id`
+    # stays the pool entry's, because recency and the pool listing are keyed on it
+    # -- so without this the drawn seed is unrecoverable from casting.json and
+    # there is no way to see whether specialisation helped or drifted.
+    seed_prompt: str = ""
 
 
 class Casting(BaseModel):

@@ -225,6 +225,20 @@ class MockLLM(BaseLLM):
                     for _ in range(n)
                 ]
             }
+        if task == "casting_detail":
+            # Specialises by *adding* a topic-derived clause to the draft rather
+            # than rewriting it, which is the one thing a mock can do honestly. It
+            # still exercises what the offline path has to get right: the clamp,
+            # the fallback when a field is missing, and the fact that the returned
+            # description is not the pool's.
+            limit = self._limit(user, "MAX_CHARS", 160)
+            return {
+                field: self._to_length(
+                    f"{self._draft(user, field)}, {topic} 관련 소품이 손 닿는 곳에",
+                    limit,
+                )
+                for field in ("creator", "setting")
+            }
         if task == "style_synthesis":
             return {
                 "grade": self.rng.choice(
@@ -254,6 +268,12 @@ class MockLLM(BaseLLM):
         raw = m.group(1) if m else (user.strip().splitlines()[0] if user.strip() else "주제")
         # Real models return a short noun phrase; keep the mock comparable.
         return " ".join(raw.strip().split()[:3])[:18]
+
+    @staticmethod
+    def _draft(user: str, field: str) -> str:
+        """The drawn pool description this call was asked to specialise."""
+        m = re.search(rf"DRAFT_{field.upper()}:\s*(.+)", user)
+        return m.group(1).strip() if m else field
 
     @staticmethod
     def _archetype(user: str) -> str:

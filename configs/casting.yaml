@@ -10,9 +10,16 @@
 # to a different channel; no code change is required. Point
 # STYLELOOM_CASTING_PATH at your own file to avoid touching the repo at all.
 #
-# `prompt` is injected verbatim into every shot's image prompt. Write it as a
-# comma-separated visual description, not a sentence -- image models weight
-# comma-separated tokens more evenly than prose.
+# `prompt` is a SEED, not the final description. Each run draws one and then
+# specialises it against that run's brief -- the draw supplies variety, the brief
+# supplies the specifics -- so write a broad casting direction here and leave the
+# particulars to be filled in. Neutral filler like "warm and approachable
+# expression" survives specialisation badly and is what makes a frame look stock.
+#
+# Write it as a comma-separated visual description, not a sentence -- image models
+# weight comma-separated tokens more evenly than prose. Keep it under ~160
+# characters: the specialised result is capped there and is carried in every shot
+# prompt, against a 512-character per-shot cap.
 
 creators:
   - id: young_woman_casual

@@ -403,12 +403,22 @@ drawn per run, all by the system and none from the user's input:
 | Element | Pool | Reaches the output as |
 |---|---|---|
 | **Hook** (required) | `configs/archetypes.yaml` | The first 3 seconds: on-screen text and opening visual |
-| **Creator** (recommended) | `configs/casting.yaml` → `creators` | Presenter tokens leading every shot prompt, plus a generated reference portrait where the endpoint supports one |
+| **Creator** (recommended) | `configs/casting.yaml` → `creators` | Presenter tokens leading every shot prompt |
 | **Background** (recommended) | `configs/casting.yaml` → `settings` | Location tokens in every shot prompt |
 
 All three use the same draw: weighted sample, penalised by what this style used in
 its recent runs, entropy from `secrets.SystemRandom`. `styleloom style history`
 shows the window that penalty is reading.
+
+The two casting draws are then **specialised against the brief** by one LLM call
+before they reach any prompt. A pool entry has to suit any topic, so it is written
+neutrally — and neutral phrasing is exactly what makes a generated frame look like
+stock. The draw supplies variety, the brief supplies specificity, and where the two
+disagree about the person the brief wins, since it is what the script was written
+about. Only the brief's content fields are sent, never the user's raw text, so the
+casting stays the system's choice rather than something the input can pin.
+`casting.json` records the drawn `seed_prompt` next to the specialised `prompt`.
+A model failure here degrades to the drawn text rather than failing the run.
 
 ### Why the hook comes *after* the outline
 
@@ -563,7 +573,9 @@ Nothing about a specific reference video is in the code:
 2. Edit `configs/archetypes.yaml` and `configs/casting.yaml`, or point
    `STYLELOOM_ARCHETYPES_PATH` / `STYLELOOM_CASTING_PATH` at your own files. The
    bundled casting pools are written for a beauty/skincare channel; a different
-   vertical wants different creators and locations.
+   vertical wants different creators and locations. Pool entries are seeds, not
+   final descriptions — each run specialises the drawn one against its brief — so
+   they should read as broad casting directions rather than finished prompts.
 3. Adding a video model means adding an entry to `configs/fal_models.yaml` — its
    parameter names, duration floor and output key — not editing the provider.
 

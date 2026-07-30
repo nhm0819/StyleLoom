@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..budget import clamp_phrase
 from ..errors import ToolError
 from ..media import estimate_bpm, probe_video
 from ..schema import (
@@ -48,24 +49,6 @@ MAX_MOTION_CHARS = 80
 MAX_DETAIL_CHARS = 90
 
 
-def clamp_phrase(text: str, limit: int) -> str:
-    """Trim a returned phrase to its budget on a clause boundary.
-
-    Whole clauses, never a character count: a phrase cut mid-word is worse in a
-    prompt than a shorter one, and the leading clause is the one that carries the
-    field's meaning. Falls back to the first clause when even that is over.
-    """
-    text = " ".join(text.split())
-    if len(text) <= limit:
-        return text
-    clauses = [c.strip() for c in text.split(",") if c.strip()]
-    kept: list[str] = []
-    for clause in clauses:
-        candidate = ", ".join([*kept, clause])
-        if kept and len(candidate) > limit:
-            break
-        kept.append(clause)
-    return ", ".join(kept)[:limit].rstrip(", ")
 MAX_CUT_TIMES_STORED = 40
 
 

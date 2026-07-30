@@ -38,8 +38,8 @@ reusable asset; the right one runs once per input.
         │
         ▼
    2. casting ...... draw creator + background,       casting.json
-        │            recency-penalised; generate a
-        │            reference portrait if usable
+        │            recency-penalised, then
+        │            specialise both against the brief
         ▼
    3. outline ...... body beats + payoff,             outline.json
         │            rescaled to the reference length

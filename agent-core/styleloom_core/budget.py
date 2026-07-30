@@ -84,6 +84,30 @@ TARGET_TEXT_CHARS = 120
 # those happen to be for this style and this draw.
 
 
+def clamp_phrase(text: str, limit: int) -> str:
+    """Trim a returned phrase to its budget on a clause boundary.
+
+    Whole clauses, never a character count: a phrase cut mid-word is worse in a
+    prompt than a shorter one, and the leading clause is the one that carries the
+    field's meaning. Falls back to the first clause when even that is over.
+
+    Here rather than in `analyze`, where it was written, because `casting` now
+    needs it too and tools must not import each other. It belongs in this module
+    on its own terms: it is the enforcement half of the budgets above.
+    """
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    clauses = [c.strip() for c in text.split(",") if c.strip()]
+    kept: list[str] = []
+    for clause in clauses:
+        candidate = ", ".join([*kept, clause])
+        if kept and len(candidate) > limit:
+            break
+        kept.append(clause)
+    return ", ".join(kept)[:limit].rstrip(", ")
+
+
 def caption_chars(style: StyleSchema) -> int:
     """What one caption can hold before the burn-in silently drops the rest."""
     return max(style.caption.max_chars_per_line, 1) * CAPTION_MAX_LINES
