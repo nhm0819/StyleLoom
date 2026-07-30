@@ -46,6 +46,21 @@
       "justMyCode": false
     },
     {
+      // debug for run resume
+      "name": "cli: run (resume)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "styleloom_cli.main",
+      "args": [
+        "run",
+        "resume",
+        "${input:runId}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
       // Sub-second round trip into the hook sampling -- the useful breakpoint
       // target in tools/hook.py. Skips ingest, render and assemble entirely.
       "name": "cli: hook preview (offline)",
@@ -122,6 +137,15 @@
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": false
+    }
+  ],
+  "inputs": [
+    {
+      // debug for run resume
+      "id": "runId",
+      "type": "promptString",
+      "description": "Run ID 입력",
+      "default": ""
     }
   ]
 }
