@@ -649,6 +649,26 @@ heavily, and given up first because colour is what QC measures while identity is
 now partly held by the anchor. At a 120-character budget the tokens that survive
 are grade, saturation and contrast.
 
+**The budgets are stated when the text is generated, not enforced after.** Three
+limits land on generated sentences and none of them reports itself when broken: the
+endpoint refuses a shot prompt over 512 characters, `storyboard.fit` buys room under
+that by dropping the colour grade QC measures, and the caption burn-in discards
+whatever will not fit in three wrapped lines. So `budget.py` computes them up front
+and `outline` and `hook` are told the numbers in their prompts.
+
+That also forced a split: a beat now carries `content` for the shot prompt and
+`caption` for the screen, because the two budgets are ~99 and 36 characters on the
+bundled reference. One string serving both is either a thin prompt or a truncated
+caption — and it was the second.
+
+Stating the numbers made a hidden problem visible. The fixed style tokens ran 426 of
+the 512 characters, leaving 40 for the actual description, and `fit` covered it up
+per shot. `plan_shot_text` now decides the split once: compression gives up the
+descriptive keywords and nothing else — the presenter, the location and the three
+measured colour figures stay, since identity is what a viewer notices breaking and
+the colour figures are what QC scores. On the bundled reference that is 324
+characters of tokens and 99 for the sentence.
+
 **Prompts are budgeted, and the two limits are six times apart.** The whole prompt
 field takes 3072 characters (2500 recommended); one shot's `words` inside a shot
 list takes 512. The provider refuses an over-length entry rather than trimming it —
@@ -759,7 +779,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-276 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+277 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting

@@ -6,6 +6,8 @@ import math
 import random
 from typing import TYPE_CHECKING
 
+from ..budget import BODY_MOTION, HOOK_MOTION, look_tokens, plan_shot_text, style_tokens
+from ..events import EventKind
 from ..schema import (
     Brief,
     Casting,
@@ -23,57 +25,6 @@ if TYPE_CHECKING:
     from ..session import RunSession
 
 MIN_AVG_SHOT_SEC = 0.3
-
-
-def look_tokens(style: StyleSchema) -> str:
-    """Grade only. QC measures these, so they go in every entry even when
-    identity does not -- a continuation inherits the person, not the grade."""
-    look = style.look
-    return (
-        f"{look.grade} colour grade, "
-        f"saturation {look.saturation:.2f}, contrast {look.contrast:.2f}"
-    )
-
-
-def style_tokens(style: StyleSchema, casting: Casting, budget: int = 0) -> str:
-    """The look, the presenter and the location, compressed into prompt tokens.
-
-    Casting comes first: identity is what viewers notice breaking, so it should
-    not sit at the tail where models weight it least.
-
-    `budget` caps the result. Emission order and drop order are deliberately
-    different: casting is emitted first so the model weights it heavily, and given
-    up first because colour is what QC measures. Only whole clauses are removed --
-    cutting to a character count would hand the model half a sentence.
-    """
-    look = style.look
-    parts = [
-        casting.creator.prompt,
-        f"in {casting.setting.prompt}",
-        f"{look.grade} colour grade",
-        f"saturation {look.saturation:.2f}",
-        f"contrast {look.contrast:.2f}",
-    ]
-    # No framing token. Under text-to-video `aspect_ratio` is an explicit request
-    # field, so spelling "vertical 9:16" into the prompt spends characters
-    # restating what the API already knows -- and inside a 512-character
-    # storyboard entry those characters cost `contrast`, which QC measures.
-    fixed = len(parts)
-    parts += look.keywords[:4]
-    parts = [p for p in parts if p]
-
-    if budget > 0:
-        # Index order to give up, most expendable first: the descriptive keywords,
-        # then location, then the presenter, and only then the measured colour.
-        give_up = list(range(fixed, len(parts))) + [1, 0, 4, 3, 2]
-        dropped: set[int] = set()
-        for index in give_up:
-            if len(", ".join(p for i, p in enumerate(parts) if i not in dropped)) <= budget:
-                break
-            if index < len(parts):
-                dropped.add(index)
-        parts = [p for i, p in enumerate(parts) if i not in dropped]
-    return ", ".join(parts)
 
 
 def ensure_distinct_frames(shots: list[Shot]) -> list[Shot]:
@@ -141,13 +92,25 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
     # the whole video_prompt, since the beat text varies per shot -- a fixed
     # token/remainder split is wrong for the long one.
     limit = ctx.video.max_shot_prompt_chars
-    tokens = style_tokens(style, casting)
+    # The same split the outline and the hook were given, so the tokens here are
+    # the ones their character budgets were computed against.
+    tokens, _ = plan_shot_text(limit, style, casting)
     looks = look_tokens(style)
 
+    squeezed: list[int] = []
+
     def fit(scene: str, motion: str) -> str:
-        """Shrink the shared tokens until scene + motion fits the entry limit."""
+        """Shrink the shared tokens until scene + motion fits the entry limit.
+
+        The last resort, not the mechanism. `outline` and `hook` are given the
+        character budget up front precisely so this does not run -- when it does,
+        it pays for the room by dropping style clauses, and the first thing it gives
+        up is the colour grade that QC measures. So a run where it binds is a run
+        whose grade score is being spent on an over-long sentence, and it says so.
+        """
         if not limit or len(f"{scene} {motion}") <= limit:
             return scene
+        squeezed.append(len(scene))
         head, _, tail = scene.partition(tokens)
         for size in range(len(tokens), 0, -16):
             shorter = style_tokens(style, casting, budget=size)
@@ -170,7 +133,7 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
             f"{hook.selected.visual}. {style.hook_style.shot_size} shot, "
             f"{move}. {tokens}. Opening shot."
         )
-        hook_motion = "Fast and attention-grabbing."
+        hook_motion = HOOK_MOTION
         shots.append(
             Shot(
                 index=len(shots),
@@ -210,7 +173,7 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                 f"{beat.content}. {sizes[j]} shot, {move}. {tokens}."
             )
             # Not the move -- that is already in the scene line above.
-            body_motion = "Natural continuous motion, no cut inside the shot."
+            body_motion = BODY_MOTION
             shots.append(
                 Shot(
                     index=len(shots),
@@ -219,7 +182,11 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                     shot_size=sizes[j],
                     camera_move=move,
                     action=beat.content,
-                    caption=beat.content if j == 0 else "",
+                    # The beat's own caption, which was generated to the burn-in
+                    # budget. `content` is the fallback for a model that did not
+                    # supply one, and it is the long string, so it is the case that
+                    # gets truncated on screen.
+                    caption=(beat.caption or beat.content) if j == 0 else "",
                     scene_prompt=fit(body_scene, body_motion),
                     motion_prompt=body_motion,
                     continuation_prompt=(
@@ -228,6 +195,19 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                     ),
                 )
             )
+
+    if squeezed:
+        ctx.emit(
+            EventKind.WARNING,
+            session.run_id,
+            stage="storyboard",
+            message=(
+                f"{len(squeezed)} of {len(shots)} shot prompts were over the "
+                f"{limit}-character budget and had style clauses dropped to fit "
+                f"(longest {max(squeezed)}). The colour grade is given up first "
+                "and qc measures it -- check the saturation and contrast checks."
+            ),
+        )
 
     return Storyboard(
         style_id=style.style_id,

@@ -10,6 +10,7 @@ import typer
 from styleloom_core import RunInputs, StyleLoomError
 from styleloom_core.schema import RunRecord
 from styleloom_core.session import RunSession
+from styleloom_core.tools import casting as casting_tool
 from styleloom_core.tools import hook as hook_tool
 from styleloom_core.tools import ingest as ingest_tool
 from styleloom_core.tools import outline as outline_tool
@@ -53,6 +54,10 @@ def preview(
     try:
         brief = ingest_tool.ingest(ctx, session)
         session.artifacts["brief"] = brief
+        # Casting before outline, as in a real run: both stages size their prompts
+        # against the style tokens, and those carry the drawn creator and setting.
+        casting = casting_tool.casting(ctx, session)
+        session.artifacts["casting"] = casting
         outline = outline_tool.outline(ctx, session)
         session.artifacts["outline"] = outline
     except StyleLoomError as exc:
@@ -69,7 +74,7 @@ def preview(
     for i in range(n):
         try:
             result = hook_tool.generate(
-                ctx, brief, outline, style, recent_archetypes=recent
+                ctx, brief, outline, style, casting, recent_archetypes=recent
             )
         except StyleLoomError as exc:
             abort(str(exc))

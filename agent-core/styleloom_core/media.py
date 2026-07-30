@@ -94,11 +94,20 @@ def filter_path(path: str | Path) -> str:
     return str(path).replace("\\", "/").replace(":", "\\\\:")
 
 
-def wrap_caption(text: str, width: int, max_lines: int = 3) -> str:
-    """Character-count wrap.
+# Lines past this are discarded, not shrunk. Named so `budget.caption_chars` can
+# derive the caption budget from it instead of restating the number.
+CAPTION_MAX_LINES = 3
+
+
+def wrap_caption(text: str, width: int, max_lines: int = CAPTION_MAX_LINES) -> str:
+    """Character-count wrap, keeping the first `max_lines` lines.
 
     Korean does not put spaces at predictable places, so a word wrapper leaves
     ragged lines. Short-form captions wrap on visual width instead.
+
+    Text past the line limit is dropped rather than scaled down, which is why the
+    generating stages are given a caption budget up front: this function cannot
+    report what it discarded, and the loss is only visible in the finished video.
     """
     words = text.split()
     if not words:

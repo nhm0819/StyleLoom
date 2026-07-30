@@ -156,9 +156,20 @@ class Casting(BaseModel):
 
 
 class Beat(BaseModel):
+    """One body beat.
+
+    `content` and `caption` say the same thing to two different consumers under two
+    very different budgets: `content` is the visual description that goes into a
+    shot prompt (hundreds of characters), `caption` is what is burned on screen
+    (tens). One string serving both is either a thin prompt or a truncated caption,
+    so the generating stage is asked for each separately. `caption` empty means the
+    model did not supply one and `storyboard` falls back to `content`.
+    """
+
     name: str
     intent: str
     content: str
+    caption: str = ""
     duration_sec: float = 3.0
 
 

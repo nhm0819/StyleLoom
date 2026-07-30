@@ -29,8 +29,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ..budget import caption_chars, shot_text_chars
 from ..config import Settings
 from ..errors import ToolError
+from ..media import CAPTION_MAX_LINES
 from ..sampling import (
     ENTROPY_SOURCE,
     load_pool,
@@ -38,7 +40,15 @@ from ..sampling import (
     sample_with_recency,
     softmax_sample,
 )
-from ..schema import Brief, Choice, HookCandidate, HookResult, Outline, StyleSchema
+from ..schema import (
+    Brief,
+    Casting,
+    Choice,
+    HookCandidate,
+    HookResult,
+    Outline,
+    StyleSchema,
+)
 from .registry import tool
 
 if TYPE_CHECKING:
@@ -82,6 +92,7 @@ def generate(
     brief: Brief,
     outline: Outline,
     style: StyleSchema,
+    casting: Casting,
     recent_archetypes: list[str] | None = None,
     candidate_count: int | None = None,
 ) -> HookResult:
@@ -100,6 +111,12 @@ def generate(
     )
 
     body_summary = " / ".join(f"[{b.name}] {b.content}" for b in outline.beats)
+    # The same two budgets the outline was held to. `visual` lands in a shot prompt
+    # and `text` is burned on screen, and neither limit reports itself when broken:
+    # the prompt degrades by dropping the colour grade QC measures, and the caption
+    # simply loses its tail.
+    caption_max = caption_chars(style)
+    visual_max = shot_text_chars(ctx.video.max_shot_prompt_chars, style, casting)
     parsed = ctx.llm.complete_json(
         task="hook_candidates",
         system=(
@@ -109,9 +126,14 @@ def generate(
             "off.\n"
             "Return JSON: candidates = list of "
             "{archetype, text, visual, context_fit, style_fit, novelty, rationale}. "
-            "context_fit / style_fit / novelty are floats in [0,1]. "
-            "`text` is the on-screen caption, max 16 characters per line. "
-            "`visual` describes what is on screen, in one sentence."
+            "context_fit / style_fit / novelty are floats in [0,1].\n"
+            f"`text` is the on-screen caption, at most {caption_max} characters "
+            f"({style.caption.max_chars_per_line} per line, {CAPTION_MAX_LINES} "
+            "lines). Anything longer is cut off on screen, not shrunk.\n"
+            f"`visual` describes what is on screen, at most {visual_max} "
+            "characters. It becomes part of a video generation prompt, so write "
+            "what is visible rather than narration.\n"
+            "Both limits are hard. Write short rather than truncating a sentence."
         ),
         user=(
             f"ARCHETYPE: {chosen['id']}\n"
@@ -127,6 +149,8 @@ def generate(
             f"STYLE_CUTS_IN_WINDOW: {style.hook_style.cut_count}\n"
             f"STYLE_CAMERA_MOVES: {style.camera.moves}\n"
             f"STYLE_TONE: {style.audio.voice_tone}\n"
+            f"TEXT_MAX_CHARS: {caption_max}\n"
+            f"VISUAL_MAX_CHARS: {visual_max}\n"
         ),
         temperature=settings.hook_temperature,
     )
@@ -163,18 +187,22 @@ def generate(
     )
 
 
-@tool("hook", reads=("style", "brief", "outline"), writes="hook")
+@tool("hook", reads=("style", "brief", "outline", "casting"), writes="hook")
 def hook(ctx: Context, session: RunSession) -> HookResult:
     """Generate the first three seconds, non-deterministically."""
     style = session.get("style", StyleSchema)
     brief = session.get("brief", Brief)
     outline = session.get("outline", Outline)
+    # For the prompt budget only: `visual` lands in a shot prompt whose fixed part
+    # carries the casting tokens, so how much room is left depends on them.
+    casting = session.get("casting", Casting)
 
     result = generate(
         ctx,
         brief,
         outline,
         style,
+        casting,
         recent_archetypes=ctx.history.recent_values(session.style_id, "hook"),
     )
 

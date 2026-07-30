@@ -38,6 +38,7 @@ def test_outline_total_respects_the_reference_duration(ctx, style):
     """
     session = make_session(ctx, style, text="주제")
     session.artifacts["brief"] = ingest_tool.ingest(ctx, session)
+    session.artifacts["casting"] = casting_tool.casting(ctx, session)
     result = outline_tool.outline(ctx, session)
 
     wanted = style.total_duration - style.hook_style.window_sec
@@ -57,6 +58,7 @@ def test_the_body_budget_floor_stays_below_short_form_references(ctx, style):
 def test_outline_never_writes_the_hook(ctx, style):
     session = make_session(ctx, style, text="주제")
     session.artifacts["brief"] = ingest_tool.ingest(ctx, session)
+    session.artifacts["casting"] = casting_tool.casting(ctx, session)
     result = outline_tool.outline(ctx, session)
     assert "hook" not in [b.name for b in result.beats]
     assert result.payoff
@@ -339,6 +341,37 @@ def test_an_undecodable_video_degrades_instead_of_failing(ctx, style, tmp_path):
 # prompt allows thousands, and every prompt this system builds was 590-700. Every
 # multi_shot request would have been rejected -- on the paid API, since the
 # offline provider declared no limit and so never exercised the budget.
+
+
+def test_an_over_long_beat_is_squeezed_and_says_so(ctx, style, brief, outline, sink):
+    """The budget is stated in the generating prompt, but a model can ignore it.
+
+    When it does, `fit` buys room by dropping style clauses and gives up the colour
+    grade first -- which QC then measures and scores down. That is a degradation, not
+    a failure, so it has to be reported or it is invisible.
+    """
+    from styleloom_core.schema import Beat, Outline
+
+    session = make_session(ctx, style, text="주제")
+    session.artifacts.update({
+        "brief": brief,
+        "hook": _hook_result(),
+        "outline": Outline(
+            beats=[Beat(name="context", intent="i", content="가" * 600, duration_sec=2.0)],
+            payoff="payoff",
+        ),
+    })
+    session.artifacts["casting"] = casting_tool.casting(ctx, session)
+
+    board = storyboard_tool.storyboard(ctx, session)
+
+    assert [s for s in board.shots if s.role == "context"], (
+        "the over-long beat produced no shots"
+    )
+    # Still refused by the provider afterwards -- the point here is that the run
+    # reports the degradation rather than passing silently.
+    messages = [e.message for e in sink.events]
+    assert any("character budget" in m for m in messages), messages
 
 
 def test_every_prompt_fits_the_shot_list_entry_limit(ctx, style, brief, outline):

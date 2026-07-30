@@ -35,24 +35,24 @@ def test_empty_archetype_file_is_rejected(ctx, tmp_path):
         H.load_archetypes(ctx.settings, path=empty)
 
 
-def test_hook_is_not_deterministic_across_reruns(ctx, brief, outline, style):
+def test_hook_is_not_deterministic_across_reruns(ctx, brief, outline, style, casting):
     """Same input, many generations. If this ever returns one distinct value the
     central requirement has silently broken."""
-    results = [H.generate(ctx, brief, outline, style) for _ in range(RUNS)]
+    results = [H.generate(ctx, brief, outline, style, casting) for _ in range(RUNS)]
     assert len({r.selected.text for r in results}) > 1
     assert len({r.archetype_sampled for r in results}) > 1
 
 
-def test_hook_records_its_own_decision_trail(ctx, brief, outline, style):
-    result = H.generate(ctx, brief, outline, style)
+def test_hook_records_its_own_decision_trail(ctx, brief, outline, style, casting):
+    result = H.generate(ctx, brief, outline, style, casting)
     assert result.archetype_sampled in result.archetype_pool
     assert result.selected in result.candidates
     assert "SystemRandom" in result.entropy_source
     assert "softmax" in result.selection_method
 
 
-def test_candidates_are_distinct_after_dedupe(ctx, brief, outline, style):
-    result = H.generate(ctx, brief, outline, style)
+def test_candidates_are_distinct_after_dedupe(ctx, brief, outline, style, casting):
+    result = H.generate(ctx, brief, outline, style, casting)
     texts = [c.text for c in result.candidates]
     assert len(texts) == len(set(texts))
     assert all(t for t in texts)
@@ -117,13 +117,13 @@ def test_softmax_favours_but_does_not_guarantee_the_top_candidate():
     assert len(picks) > 1, "argmax would collapse this to one outcome"
 
 
-def test_no_usable_candidates_raises(ctx, brief, outline, style, monkeypatch):
+def test_no_usable_candidates_raises(ctx, brief, outline, style, casting, monkeypatch):
     monkeypatch.setattr(ctx.llm, "complete_json", lambda **kw: {"candidates": []})
     with pytest.raises(ToolError, match="no usable candidates"):
-        H.generate(ctx, brief, outline, style)
+        H.generate(ctx, brief, outline, style, casting)
 
 
-def test_hook_prompt_carries_the_payoff(ctx, brief, outline, style):
+def test_hook_prompt_carries_the_payoff(ctx, brief, outline, style, casting):
     """The hook must promise what the body delivers, which is only possible if the
     payoff reaches the prompt."""
     seen = {}
@@ -133,6 +133,6 @@ def test_hook_prompt_carries_the_payoff(ctx, brief, outline, style):
         return {"candidates": [{"archetype": "question", "text": "t", "visual": "v"}]}
 
     ctx.llm.complete_json = capture  # type: ignore[method-assign]
-    H.generate(ctx, brief, outline, style)
+    H.generate(ctx, brief, outline, style, casting)
     assert outline.payoff in seen["user"]
     assert "never bait" in seen["system"]

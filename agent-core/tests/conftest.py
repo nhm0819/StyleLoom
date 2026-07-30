@@ -16,7 +16,17 @@ import pytest
 from styleloom_core import Settings, build_context, extract_style
 from styleloom_core.context import Context
 from styleloom_core.events import ListSink
-from styleloom_core.schema import Beat, Brief, Outline, StyleSchema
+from styleloom_core.schema import (
+    Beat,
+    Brief,
+    Casting,
+    Outline,
+    RunInputs,
+    RunRecord,
+    StyleSchema,
+)
+from styleloom_core.session import RunSession
+from styleloom_core.tools import casting as casting_tool
 
 # Small frames keep the ffmpeg work in these tests to roughly a second.
 TEST_W, TEST_H, TEST_FPS = 240, 426, 24
@@ -126,6 +136,23 @@ def brief() -> Brief:
         facts=["사실 1", "사실 2"],
         language="ko",
     )
+
+
+@pytest.fixture
+def casting(ctx: Context, style: StyleSchema, brief: Brief) -> Casting:
+    """A drawn creator and setting.
+
+    `outline` and `hook` both size their prompts against the style tokens, and those
+    carry the drawn creator and setting descriptions -- so how much room a generated
+    sentence gets depends on this. Which is also why casting runs before both.
+    """
+    session = RunSession(
+        record=RunRecord(run_id="fixture", style_id=style.style_id),
+        inputs=RunInputs(text="테스트"),
+        store=ctx.runs,
+    )
+    session.artifacts.update({"style": style, "brief": brief})
+    return casting_tool.casting(ctx, session)
 
 
 @pytest.fixture

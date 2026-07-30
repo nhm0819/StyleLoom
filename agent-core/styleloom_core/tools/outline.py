@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..schema import Beat, Brief, Outline, StyleSchema
+from ..budget import caption_chars, shot_text_chars
+from ..schema import Beat, Brief, Casting, Outline, StyleSchema
 from .registry import tool
 
 if TYPE_CHECKING:
@@ -34,23 +35,41 @@ def fit_to_budget(beats: list[Beat], budget: float) -> list[Beat]:
     return beats
 
 
-@tool("outline", reads=("style", "brief"), writes="outline")
+@tool("outline", reads=("style", "brief", "casting"), writes="outline")
 def outline(ctx: Context, session: RunSession) -> Outline:
     """Turn the Brief into body beats plus an explicit payoff."""
     style = session.get("style", StyleSchema)
     brief = session.get("brief", Brief)
+    # Read for the budget, not for the content. `content` lands inside a shot prompt
+    # whose fixed part includes the casting tokens, so how much room is left depends
+    # on how long the drawn creator and setting descriptions are.
+    casting = session.get("casting", Casting)
 
     body_beats = [b for b in style.beat_pattern if b != "hook"] or ["context", "payoff"]
     body_budget = max(style.total_duration - style.hook_style.window_sec, MIN_BODY_BUDGET)
     per_beat = round(body_budget / len(body_beats), 2)
+
+    # Stated in the prompt rather than trimmed afterwards. Over the prompt budget,
+    # `storyboard.fit` buys room by dropping style clauses and gives up the colour
+    # grade that QC measures; over the caption budget, the burn-in discards the tail
+    # and says nothing. Asking for the right length is cheaper than either.
+    content_max = shot_text_chars(ctx.video.max_shot_prompt_chars, style, casting)
+    caption_max = caption_chars(style)
 
     parsed = ctx.llm.complete_json(
         task="outline",
         system=(
             f"You write short-form video outlines in {brief.language}. "
             "Return JSON: payoff (string), beats "
-            "(list of {name, intent, content, duration_sec}). "
-            "Do NOT write the hook -- it is generated separately."
+            "(list of {name, intent, content, caption, duration_sec}). "
+            "Do NOT write the hook -- it is generated separately.\n"
+            f"`content` describes what is on screen for that beat, at most "
+            f"{content_max} characters. It becomes part of a video generation "
+            "prompt, so write what is visible, not narration.\n"
+            f"`caption` is the on-screen text for that beat, at most "
+            f"{caption_max} characters. Anything longer is cut off on screen. "
+            "It is read in about a second, so keep it to a phrase.\n"
+            "Both limits are hard. Write short rather than truncating a sentence."
         ),
         user=(
             f"TOPIC: {brief.topic}\n"
@@ -59,6 +78,8 @@ def outline(ctx: Context, session: RunSession) -> Outline:
             f"FACTS: {brief.facts}\n"
             f"BEAT_NAMES: {body_beats}\n"
             f"SECONDS_PER_BEAT: {per_beat}\n"
+            f"CONTENT_MAX_CHARS: {content_max}\n"
+            f"CAPTION_MAX_CHARS: {caption_max}\n"
         ),
         temperature=0.7,
     )
@@ -69,13 +90,20 @@ def outline(ctx: Context, session: RunSession) -> Outline:
             name=str(b.get("name", body_beats[min(i, len(body_beats) - 1)])),
             intent=str(b.get("intent", "")),
             content=str(b.get("content", "")),
+            caption=str(b.get("caption", "")).strip(),
             duration_sec=max(float(b.get("duration_sec", per_beat)), MIN_BEAT_SEC),
         )
         for i, b in enumerate(raw_beats)
     ]
     if not beats:
         beats = [
-            Beat(name=n, intent="", content=brief.key_message, duration_sec=per_beat)
+            Beat(
+                name=n,
+                intent="",
+                content=brief.key_message,
+                caption=brief.key_message[:caption_max],
+                duration_sec=per_beat,
+            )
             for n in body_beats
         ]
 

@@ -181,13 +181,21 @@ class MockLLM(BaseLLM):
         if task == "outline":
             names = self._beat_names(user)
             per = self._per_beat(user)
+            # Written to the budgets the prompt states, and padded up to them. A mock
+            # that always answered well inside the limits would never exercise them:
+            # the budget arithmetic, the caption/content split and the warning that
+            # fires when a prompt has to be squeezed would all be untested offline,
+            # and the first real test would be a paid run.
+            content_max = self._limit(user, "CONTENT_MAX_CHARS", 200)
+            caption_max = self._limit(user, "CAPTION_MAX_CHARS", 42)
             return {
                 "payoff": f"{topic}에서 실제로 통한 방법",
                 "beats": [
                     {
                         "name": n,
                         "intent": f"{n} 단계 목적",
-                        "content": f"{topic} - {n} 구간 내용",
+                        "content": self._to_length(f"{topic} - {n} 구간 내용", content_max),
+                        "caption": self._to_length(f"{topic} {n}", caption_max),
                         "duration_sec": per,
                     }
                     for n in names
@@ -201,8 +209,14 @@ class MockLLM(BaseLLM):
                 "candidates": [
                     {
                         "archetype": arch,
-                        "text": self.rng.choice(pool).format(t=topic),
-                        "visual": self.rng.choice(_MOCK_VISUALS),
+                        "text": self._to_length(
+                            self.rng.choice(pool).format(t=topic),
+                            self._limit(user, "TEXT_MAX_CHARS", 42),
+                        ),
+                        "visual": self._to_length(
+                            self.rng.choice(_MOCK_VISUALS),
+                            self._limit(user, "VISUAL_MAX_CHARS", 200),
+                        ),
                         "context_fit": round(self.rng.uniform(0.55, 0.98), 3),
                         "style_fit": round(self.rng.uniform(0.55, 0.98), 3),
                         "novelty": round(self.rng.uniform(0.35, 0.99), 3),
@@ -247,6 +261,33 @@ class MockLLM(BaseLLM):
     def _per_beat(user: str) -> float:
         m = re.search(r"SECONDS_PER_BEAT:\s*([\d.]+)", user)
         return float(m.group(1)) if m else 4.0
+
+    @staticmethod
+    def _limit(user: str, key: str, default: int) -> int:
+        """A budget the caller stated in the prompt."""
+        m = re.search(rf"{key}:\s*(\d+)", user)
+        return int(m.group(1)) if m else default
+
+    @staticmethod
+    def _to_length(text: str, limit: int) -> str:
+        """Obey a stated budget, on a word boundary.
+
+        Only shortens. An earlier version padded up to the limit so that offline runs
+        exercised the budget arithmetic -- but `text` and `caption` are burned on
+        screen, and filling them meant repeating words in the finished video. The
+        arithmetic is exercised by tests that hand the stages over-long text on
+        purpose; the mock's job is to answer plausibly, and a real model told a limit
+        writes short, not to the byte.
+        """
+        if limit <= 0 or len(text) <= limit:
+            return text
+        words, out = text.split(), ""
+        for word in words:
+            candidate = f"{out} {word}".strip()
+            if len(candidate) > limit:
+                break
+            out = candidate
+        return out or text[:limit]
 
     @staticmethod
     def _candidate_count(user: str) -> int:
