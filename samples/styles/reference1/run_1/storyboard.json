@@ -1,0 +1,139 @@
+{
+  "style_id": "reference1",
+  "hook_text": "물광은 크림이\n아니라 미스트가\n만든다",
+  "hook_archetype": "contradiction",
+  "shots": [
+    {
+      "index": 0,
+      "role": "hook",
+      "duration_sec": 1.0,
+      "shot_size": "CU",
+      "camera_move": "extreme close-up push-in on product texture",
+      "action": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업",
+      "caption": "물광은 크림이\n아니라 미스트가\n만든다",
+      "scene_prompt": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업. CU shot, extreme close-up push-in on product texture. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade. Opening shot.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals",
+      "continuation_prompt": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업. CU shot, extreme close-up push-in on product texture. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 1,
+      "role": "hook",
+      "duration_sec": 1.0,
+      "shot_size": "CU",
+      "camera_move": "handheld tilt to face",
+      "action": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업",
+      "caption": "",
+      "scene_prompt": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업. CU shot, handheld tilt to face. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade. Opening shot.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals",
+      "continuation_prompt": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업. CU shot, handheld tilt to face. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 2,
+      "role": "hook",
+      "duration_sec": 1.0,
+      "shot_size": "CU",
+      "camera_move": "whip-style jump cut between angles",
+      "action": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업",
+      "caption": "",
+      "scene_prompt": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업. CU shot, whip-style jump cut between angles. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade. Opening shot.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals",
+      "continuation_prompt": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업. CU shot, whip-style jump cut between angles. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 3,
+      "role": "context",
+      "duration_sec": 1.0,
+      "shot_size": "CU",
+      "camera_move": "slow finger swipe across skin",
+      "action": "햇살 가득한 야외, 살짝 지치고 건조해 보이는 피부를 손으로 만지는 여성의 얼굴 클로즈업",
+      "caption": "더위에 지친 피부, 그대로 두시나요?",
+      "scene_prompt": "햇살 가득한 야외, 살짝 지치고 건조해 보이는 피부를 손으로 만지는 여성의 얼굴 클로즈업. CU shot, slow finger swipe across skin. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals. No cut inside the shot.",
+      "continuation_prompt": "햇살 가득한 야외, 살짝 지치고 건조해 보이는 피부를 손으로 만지는 여성의 얼굴 클로즈업. CU shot, slow finger swipe across skin. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 4,
+      "role": "context",
+      "duration_sec": 1.0,
+      "shot_size": "WS",
+      "camera_move": "handheld tilt to face",
+      "action": "햇살 가득한 야외, 살짝 지치고 건조해 보이는 피부를 손으로 만지는 여성의 얼굴 클로즈업",
+      "caption": "",
+      "scene_prompt": "햇살 가득한 야외, 살짝 지치고 건조해 보이는 피부를 손으로 만지는 여성의 얼굴 클로즈업. WS shot, handheld tilt to face. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals. No cut inside the shot.",
+      "continuation_prompt": "햇살 가득한 야외, 살짝 지치고 건조해 보이는 피부를 손으로 만지는 여성의 얼굴 클로즈업. WS shot, handheld tilt to face. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 5,
+      "role": "turn",
+      "duration_sec": 1.0,
+      "shot_size": "CU",
+      "camera_move": "handheld tilt to face",
+      "action": "가방에서 작은 미스트 병을 꺼내 얼굴에 가볍게 스프레이하는 모습, 물방울이 빛에 반짝임",
+      "caption": "상큼한 미스트 한 번 뿌려볼까?",
+      "scene_prompt": "가방에서 작은 미스트 병을 꺼내 얼굴에 가볍게 스프레이하는 모습, 물방울이 빛에 반짝임. CU shot, handheld tilt to face. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals. No cut inside the shot.",
+      "continuation_prompt": "가방에서 작은 미스트 병을 꺼내 얼굴에 가볍게 스프레이하는 모습, 물방울이 빛에 반짝임. CU shot, handheld tilt to face. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 6,
+      "role": "turn",
+      "duration_sec": 1.0,
+      "shot_size": "MS",
+      "camera_move": "slow finger swipe across skin",
+      "action": "가방에서 작은 미스트 병을 꺼내 얼굴에 가볍게 스프레이하는 모습, 물방울이 빛에 반짝임",
+      "caption": "",
+      "scene_prompt": "가방에서 작은 미스트 병을 꺼내 얼굴에 가볍게 스프레이하는 모습, 물방울이 빛에 반짝임. MS shot, slow finger swipe across skin. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals. No cut inside the shot.",
+      "continuation_prompt": "가방에서 작은 미스트 병을 꺼내 얼굴에 가볍게 스프레이하는 모습, 물방울이 빛에 반짝임. MS shot, slow finger swipe across skin. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 7,
+      "role": "payoff",
+      "duration_sec": 1.0,
+      "shot_size": "MS",
+      "camera_move": "slow finger swipe across skin",
+      "action": "미스트 후 피부에 물광이 도는 클로즈업, 화사하게 웃는 여성의 표정",
+      "caption": "촉촉함과 생기, 바로 느껴져요",
+      "scene_prompt": "미스트 후 피부에 물광이 도는 클로즈업, 화사하게 웃는 여성의 표정. MS shot, slow finger swipe across skin. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals. No cut inside the shot.",
+      "continuation_prompt": "미스트 후 피부에 물광이 도는 클로즈업, 화사하게 웃는 여성의 표정. MS shot, slow finger swipe across skin. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 8,
+      "role": "payoff",
+      "duration_sec": 1.0,
+      "shot_size": "MS",
+      "camera_move": "handheld tilt to face",
+      "action": "미스트 후 피부에 물광이 도는 클로즈업, 화사하게 웃는 여성의 표정",
+      "caption": "",
+      "scene_prompt": "미스트 후 피부에 물광이 도는 클로즈업, 화사하게 웃는 여성의 표정. MS shot, handheld tilt to face. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals. No cut inside the shot.",
+      "continuation_prompt": "미스트 후 피부에 물광이 도는 클로즈업, 화사하게 웃는 여성의 표정. MS shot, handheld tilt to face. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 9,
+      "role": "cta",
+      "duration_sec": 1.0,
+      "shot_size": "WS",
+      "camera_move": "handheld tilt to face",
+      "action": "미스트 제품이 화면 중앙에 놓이고 상큼한 과일 그래픽이 배경에 떠오름",
+      "caption": "지금 바로 상큼함 충전!",
+      "scene_prompt": "미스트 제품이 화면 중앙에 놓이고 상큼한 과일 그래픽이 배경에 떠오름. WS shot, handheld tilt to face. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals. No cut inside the shot.",
+      "continuation_prompt": "미스트 제품이 화면 중앙에 놓이고 상큼한 과일 그래픽이 배경에 떠오름. WS shot, handheld tilt to face. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    },
+    {
+      "index": 10,
+      "role": "cta",
+      "duration_sec": 1.0,
+      "shot_size": "MS",
+      "camera_move": "slow finger swipe across skin",
+      "action": "미스트 제품이 화면 중앙에 놓이고 상큼한 과일 그래픽이 배경에 떠오름",
+      "caption": "",
+      "scene_prompt": "미스트 제품이 화면 중앙에 놓이고 상큼한 과일 그래픽이 배경에 떠오름. MS shot, slow finger swipe across skin. Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle, in bright modern bathroom vanity, white tile, large mirror, punchy warm skincare-ad grade.",
+      "motion_prompt": "fast hook-driven jump cuts between macro texture and face reveals. No cut inside the shot.",
+      "continuation_prompt": "미스트 제품이 화면 중앙에 놓이고 상큼한 과일 그래픽이 배경에 떠오름. MS shot, slow finger swipe across skin. Same subject and location. punchy warm skincare-ad grade, deep reds boosted colour grade."
+    }
+  ]
+}

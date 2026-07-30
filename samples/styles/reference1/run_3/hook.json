@@ -1,0 +1,58 @@
+{
+  "archetype_pool": [
+    "question",
+    "reversal",
+    "shock_number",
+    "empathy",
+    "visual_impact",
+    "contradiction"
+  ],
+  "archetype_sampled": "empathy",
+  "candidates": [
+    {
+      "archetype": "empathy",
+      "text": "이 칙칙함,\n저만 보이는거\n아니죠?",
+      "visual": "거울 앞 흑인 여성, 건조하고 칙칙한 뺨을 손끝으로 만지는 극단적 클로즈업, 텍스처 강조",
+      "score": 0.865,
+      "rationale": "건조하고 칙칙한 피부를 거울로 확인하는 순간을 짚어 공감 유도, 이후 미스트로 해결되는 payoff와 정확히 연결됨"
+    },
+    {
+      "archetype": "empathy",
+      "text": "점심만 되면\n피부가 확\n칙칙해지죠",
+      "visual": "핸드헬드 틸트로 얼굴 전환, 건조하고 윤기 없는 피부 클로즈업, 손으로 볼 만지는 여성",
+      "score": 0.835,
+      "rationale": "시간이 지나며 피부가 칙칙해지는 흔한 경험을 짚어 하루종일 촉촉함 유지라는 payoff를 예고"
+    },
+    {
+      "archetype": "empathy",
+      "text": "화장 뜨는\n그 순간\n다들 알죠?",
+      "visual": "메이크업 위 건조하고 들뜬 피부 클로즈업, 손끝으로 문지르는 여성, 위스프 점프컷",
+      "score": 0.87,
+      "rationale": "메이크업이 뜨는 익숙한 상황을 지목해 이후 미스트로 반짝이는 피부가 되는 payoff와 직결"
+    },
+    {
+      "archetype": "empathy",
+      "text": "물만 발라도\n부족한 이\n건조함",
+      "visual": "손가락으로 피부 위 슬로우 스와이프, 건조하고 각질 있는 피부 클로즈업, 손에 로션",
+      "score": 0.815,
+      "rationale": "기존 보습으로는 부족한 건조함을 공감시키고 성분 좋은 미스트가 해결책임을 암시"
+    },
+    {
+      "archetype": "empathy",
+      "text": "거울 볼 때마다\n칙칙해\n보이나요?",
+      "visual": "거울 속 얼굴 클로즈업 푸시인, 건조하고 생기 없는 피부, 손으로 뺨 만지는 여성",
+      "score": 0.839,
+      "rationale": "거울 앞에서 느끼는 칙칙함이라는 구체적 순간을 짚어 미스트 사용 후 생기있는 피부라는 payoff로 자연스럽게 연결"
+    }
+  ],
+  "selected": {
+    "archetype": "empathy",
+    "text": "이 칙칙함,\n저만 보이는거\n아니죠?",
+    "visual": "거울 앞 흑인 여성, 건조하고 칙칙한 뺨을 손끝으로 만지는 극단적 클로즈업, 텍스처 강조",
+    "score": 0.865,
+    "rationale": "건조하고 칙칙한 피부를 거울로 확인하는 순간을 짚어 공감 유도, 이후 미스트로 해결되는 payoff와 정확히 연결됨"
+  },
+  "selection_method": "top_k_softmax(k=3, T=0.8)",
+  "temperature": 0.9,
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

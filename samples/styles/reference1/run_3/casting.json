@@ -1,0 +1,29 @@
+{
+  "creator": {
+    "id": "hands_only",
+    "label": "손만 등장 (얼굴 노출 없음)",
+    "prompt": "close framing on well-groomed dark-brown-skinned hands, short natural nails, holding facial mist bottle, neutral long sleeves, no face visible",
+    "seed_prompt": "close framing on a pair of well-groomed hands with short natural nails, no face visible, neutral long sleeves"
+  },
+  "setting": {
+    "id": "bright_bathroom",
+    "label": "밝은 욕실 세면대",
+    "prompt": "bright modern bathroom vanity, white tile, large mirror, soft daylight from frosted window, facial mist bottles and skincare within reach",
+    "seed_prompt": "a bright modern bathroom vanity, white tile, large mirror, soft daylight from a frosted window, minimal clutter"
+  },
+  "creator_pool": [
+    "young_woman_casual",
+    "young_woman_polished",
+    "young_man_casual",
+    "woman_30s_editorial",
+    "hands_only"
+  ],
+  "setting_pool": [
+    "bright_bathroom",
+    "bedroom_vanity",
+    "sunlit_kitchen",
+    "studio_seamless",
+    "cafe_window"
+  ],
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

@@ -1,0 +1,36 @@
+{
+  "run_id": "run_20260730T154410_9b02fe",
+  "style_id": "reference1",
+  "status": "done",
+  "stage": "done",
+  "created_at": "2026-07-30T15:44:10+00:00",
+  "updated_at": "2026-07-30T15:48:07+00:00",
+  "error": null,
+  "artifacts": {
+    "style": "data\\runs\\run_20260730T154410_9b02fe\\style_used.json",
+    "brief": "data\\runs\\run_20260730T154410_9b02fe\\brief.json",
+    "casting": "data\\runs\\run_20260730T154410_9b02fe\\casting.json",
+    "outline": "data\\runs\\run_20260730T154410_9b02fe\\outline.json",
+    "hook": "data\\runs\\run_20260730T154410_9b02fe\\hook.json",
+    "storyboard": "data\\runs\\run_20260730T154410_9b02fe\\storyboard.json",
+    "keyframe": "data\\runs\\run_20260730T154410_9b02fe\\keyframe.json",
+    "render": "data\\runs\\run_20260730T154410_9b02fe\\render.json",
+    "assemble": "data\\runs\\run_20260730T154410_9b02fe\\assemble.json",
+    "qc": "data\\runs\\run_20260730T154410_9b02fe\\qc_report.json",
+    "final_video": "data\\runs\\run_20260730T154410_9b02fe\\final.mp4"
+  },
+  "hook_text": "물광은 크림이\n아니라 미스트가\n만든다",
+  "hook_archetype": "contradiction",
+  "qc_score": 0.429,
+  "plan_steps": [
+    "ingest",
+    "casting",
+    "outline",
+    "hook",
+    "storyboard",
+    "keyframe",
+    "render",
+    "assemble",
+    "qc"
+  ]
+}

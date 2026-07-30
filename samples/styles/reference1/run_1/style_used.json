@@ -1,0 +1,86 @@
+{
+  "style_id": "reference1",
+  "created_at": "2026-07-30T15:43:33+00:00",
+  "source_refs": [
+    "사전과제_reference1.mp4"
+  ],
+  "total_duration": 10.7,
+  "beat_pattern": [
+    "hook",
+    "context",
+    "turn",
+    "payoff",
+    "cta"
+  ],
+  "pacing": {
+    "avg_shot_sec": 0.764,
+    "shot_count": 14,
+    "cut_style": "rapid quick-cut montage, near one-cut-per-second, macro-to-face jump cuts",
+    "cut_times": [
+      0.533,
+      0.867,
+      1.267,
+      1.733,
+      2.067,
+      3.667,
+      4.133,
+      4.6,
+      4.933,
+      5.4,
+      6.667,
+      8.0,
+      9.0
+    ]
+  },
+  "camera": {
+    "shot_size_dist": {
+      "CU": 0.5,
+      "MS": 0.35,
+      "WS": 0.15
+    },
+    "moves": [
+      "extreme close-up push-in on product texture",
+      "handheld tilt to face",
+      "whip-style jump cut between angles",
+      "slow finger swipe across skin"
+    ]
+  },
+  "look": {
+    "grade": "punchy warm skincare-ad grade, deep reds boosted",
+    "saturation": 0.343,
+    "contrast": 0.442,
+    "warmth": 0.574,
+    "keywords": [
+      "skincare glow",
+      "collagen jelly",
+      "TikTok GRWM",
+      "macro product texture",
+      "before and after glow"
+    ],
+    "detail": {
+      "subject": "extreme close-up of red jelly serum texture and a face applying it",
+      "lighting": "soft diffuse daylight from a window, slightly warm",
+      "texture": "glossy wobbling jelly with wet sheen against smooth dewy skin and glinting fingertips",
+      "palette": "saturated red and pink product tones against warm brown skin and neutral cream background",
+      "lens": "shallow depth of field macro close-up, slight handheld wobble, phone-camera intimacy",
+      "motion_feel": "fast hook-driven jump cuts between macro texture and face reveals"
+    }
+  },
+  "caption": {
+    "pos": "center_lower",
+    "anim": "pop_in",
+    "max_chars_per_line": 14,
+    "color": "white",
+    "stroke_color": "black"
+  },
+  "audio": {
+    "bpm": 128.8,
+    "voice_tone": "upbeat, breathy, confiding influencer voiceover with soft excitement"
+  },
+  "hook_style": {
+    "window_sec": 3.0,
+    "shot_size": "CU",
+    "cut_count": 5
+  },
+  "notes": "Front-loaded with 5 cuts in first 3s to hook viewer, alternating extreme macro shots of jelly serum with candid face close-ups; consistent bold red/pink product color anchors every frame."
+}

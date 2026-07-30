@@ -1,0 +1,29 @@
+{
+  "creator": {
+    "id": "young_woman_casual",
+    "label": "20대 여성 · 편안한 홈웨어",
+    "prompt": "Korean woman, mid-20s, dewy bare-faced makeup, damp shoulder-length hair pushed back, oversized cream cotton sweatshirt, holding citrus mist bottle",
+    "seed_prompt": "a Korean woman in her mid-20s, natural bare-faced makeup, soft shoulder-length hair, oversized cream cotton sweatshirt, warm and approachable expression"
+  },
+  "setting": {
+    "id": "bright_bathroom",
+    "label": "밝은 욕실 세면대",
+    "prompt": "bright modern bathroom vanity, white tile, large mirror, frosted window daylight, citrus mist bottle and skincare on counter, minimal clutter",
+    "seed_prompt": "a bright modern bathroom vanity, white tile, large mirror, soft daylight from a frosted window, minimal clutter"
+  },
+  "creator_pool": [
+    "young_woman_casual",
+    "young_woman_polished",
+    "young_man_casual",
+    "woman_30s_editorial",
+    "hands_only"
+  ],
+  "setting_pool": [
+    "bright_bathroom",
+    "bedroom_vanity",
+    "sunlit_kitchen",
+    "studio_seamless",
+    "cafe_window"
+  ],
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

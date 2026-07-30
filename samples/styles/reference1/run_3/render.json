@@ -1,0 +1,56 @@
+{
+  "segments": [
+    {
+      "path": "data\\runs\\run_20260730T154432_e748c3\\shots\\win_00.mp4",
+      "shot_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "requested_durations": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "billed_durations": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "path": "data\\runs\\run_20260730T154432_e748c3\\shots\\win_01.mp4",
+      "shot_indices": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "requested_durations": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "billed_durations": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ],
+  "errors": {}
+}

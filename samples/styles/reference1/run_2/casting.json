@@ -1,0 +1,29 @@
+{
+  "creator": {
+    "id": "woman_30s_editorial",
+    "label": "30대 여성 · 에디토리얼",
+    "prompt": "Korean man, mid-20s to early 30s, short neat hair, minimal grooming, casual fitted t-shirt, clear skin, holding facial mist bottle, focused calm expression",
+    "seed_prompt": "a Korean woman in her early 30s, refined minimal makeup, sleek dark hair, structured black knit top, calm assured expression"
+  },
+  "setting": {
+    "id": "sunlit_kitchen",
+    "label": "햇살 드는 주방",
+    "prompt": "modern bathroom counter, minimal grooming shelf, facial mist bottle and skincare items within reach, mirror, neutral tile, soft daylight",
+    "seed_prompt": "a sunlit kitchen counter, pale wood surfaces, a glass of water and a small plant, bright natural light"
+  },
+  "creator_pool": [
+    "young_woman_casual",
+    "young_woman_polished",
+    "young_man_casual",
+    "woman_30s_editorial",
+    "hands_only"
+  ],
+  "setting_pool": [
+    "bright_bathroom",
+    "bedroom_vanity",
+    "sunlit_kitchen",
+    "studio_seamless",
+    "cafe_window"
+  ],
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

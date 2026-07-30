@@ -1,0 +1,13 @@
+{
+  "0": "VideoProviderError: kling task 911832832346685497 failed: Account balance not enough",
+  "1": "VideoProviderError: kling task 911832832346685497 failed: Account balance not enough",
+  "2": "VideoProviderError: kling task 911832832346685497 failed: Account balance not enough",
+  "3": "VideoProviderError: kling task 911832832346685497 failed: Account balance not enough",
+  "4": "VideoProviderError: kling task 911832832346685497 failed: Account balance not enough",
+  "5": "VideoProviderError: kling task 911832832346685497 failed: Account balance not enough",
+  "6": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"207f632d-e7fc-443d-ba82-49a5da3aa614\"}",
+  "7": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"207f632d-e7fc-443d-ba82-49a5da3aa614\"}",
+  "8": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"207f632d-e7fc-443d-ba82-49a5da3aa614\"}",
+  "9": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"207f632d-e7fc-443d-ba82-49a5da3aa614\"}",
+  "10": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"207f632d-e7fc-443d-ba82-49a5da3aa614\"}"
+}

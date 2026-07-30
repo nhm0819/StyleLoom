@@ -1,0 +1,58 @@
+{
+  "archetype_pool": [
+    "question",
+    "reversal",
+    "shock_number",
+    "empathy",
+    "visual_impact",
+    "contradiction"
+  ],
+  "archetype_sampled": "contradiction",
+  "candidates": [
+    {
+      "archetype": "contradiction",
+      "text": "미스트 뿌릴수록\n건조해진다는 거\n다 거짓말입니다",
+      "visual": "햇살 가득한 야외, 지친 피부를 손으로 만지는 여성 얼굴 클로즈업, 카메라 서서히 푸시인",
+      "score": 0.905,
+      "rationale": "미스트가 피부를 더 건조하게 만든다는 흔한 오해를 정면으로 부정하며 본편의 수분감 페이오프로 자연스럽게 연결됨"
+    },
+    {
+      "archetype": "contradiction",
+      "text": "그 미스트\n향만 좋은 게\n아니었어요",
+      "visual": "가방에서 미스트 병을 꺼내 얼굴에 가볍게 스프레이, 물방울이 햇빛에 반짝이는 클로즈업",
+      "score": 0.855,
+      "rationale": "향만 좋다는 편견을 뒤집으며 실제 스킨 효과가 있다는 본편 메시지를 정확히 예고"
+    },
+    {
+      "archetype": "contradiction",
+      "text": "미스트가 마지막?\n그 순서, 틀렸어요",
+      "visual": "핸드헬드로 얼굴에 미스트 뿌리는 여성, 물광 도는 피부 클로즈업으로 휙 전환",
+      "score": 0.865,
+      "rationale": "스킨케어 마지막 단계라는 상식을 부정하며 미스트의 즉각적 효과를 강조하는 본편과 연결"
+    },
+    {
+      "archetype": "contradiction",
+      "text": "물광은 크림이\n아니라 미스트가\n만든다",
+      "visual": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업",
+      "score": 0.874,
+      "rationale": "크림이 물광의 핵심이라는 통념을 부정하며 미스트의 즉각적인 광채 효과를 정확히 예고"
+    },
+    {
+      "archetype": "contradiction",
+      "text": "상큼한 향은\n금방 날아간다?\n그건 오해예요",
+      "visual": "미스트 제품 클로즈업, 상큼한 과일 그래픽이 배경에 떠오르며 화사하게 웃는 여성 표정",
+      "score": 0.851,
+      "rationale": "향이 금방 사라진다는 통념을 부정하며 산뜻한 마무리감이 지속된다는 본편 페이오프와 일치"
+    }
+  ],
+  "selected": {
+    "archetype": "contradiction",
+    "text": "물광은 크림이\n아니라 미스트가\n만든다",
+    "visual": "손가락으로 피부를 슬며시 문지르는 슬로우 스와이프 샷, 촉촉하게 빛나는 피부 클로즈업",
+    "score": 0.874,
+    "rationale": "크림이 물광의 핵심이라는 통념을 부정하며 미스트의 즉각적인 광채 효과를 정확히 예고"
+  },
+  "selection_method": "top_k_softmax(k=3, T=0.8)",
+  "temperature": 0.9,
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

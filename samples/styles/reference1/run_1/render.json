@@ -1,0 +1,38 @@
+{
+  "segments": [
+    {
+      "path": "data\\runs\\run_20260730T154410_9b02fe\\shots\\win_00.mp4",
+      "shot_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "requested_durations": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "billed_durations": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ],
+  "errors": {
+    "6": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"b94694e4-2cfe-421d-b67b-85aad45caa16\"}",
+    "7": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"b94694e4-2cfe-421d-b67b-85aad45caa16\"}",
+    "8": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"b94694e4-2cfe-421d-b67b-85aad45caa16\"}",
+    "9": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"b94694e4-2cfe-421d-b67b-85aad45caa16\"}",
+    "10": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"b94694e4-2cfe-421d-b67b-85aad45caa16\"}"
+  }
+}

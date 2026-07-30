@@ -1,0 +1,13 @@
+{
+  "0": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"a4f83f22-6650-4dad-b47c-aa4b13f1ed4c\"}",
+  "1": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"a4f83f22-6650-4dad-b47c-aa4b13f1ed4c\"}",
+  "2": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"a4f83f22-6650-4dad-b47c-aa4b13f1ed4c\"}",
+  "3": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"a4f83f22-6650-4dad-b47c-aa4b13f1ed4c\"}",
+  "4": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"a4f83f22-6650-4dad-b47c-aa4b13f1ed4c\"}",
+  "5": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"a4f83f22-6650-4dad-b47c-aa4b13f1ed4c\"}",
+  "6": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"d8dc14f1-5f04-4b58-9318-fcd16f14134b\"}",
+  "7": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"d8dc14f1-5f04-4b58-9318-fcd16f14134b\"}",
+  "8": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"d8dc14f1-5f04-4b58-9318-fcd16f14134b\"}",
+  "9": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"d8dc14f1-5f04-4b58-9318-fcd16f14134b\"}",
+  "10": "VideoProviderError: kling /image-to-video/kling-3.0 returned 429: {\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"d8dc14f1-5f04-4b58-9318-fcd16f14134b\"}"
+}

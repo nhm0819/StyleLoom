@@ -1,0 +1,2 @@
+file 'C:\Users\nhm90\OneDrive\문서\work\StyleLoom\data\runs\run_20260730T154432_e748c3\captioned\seg_00.mp4'
+file 'C:\Users\nhm90\OneDrive\문서\work\StyleLoom\data\runs\run_20260730T154432_e748c3\captioned\seg_01.mp4'

@@ -1,0 +1,58 @@
+{
+  "archetype_pool": [
+    "question",
+    "reversal",
+    "shock_number",
+    "empathy",
+    "visual_impact",
+    "contradiction"
+  ],
+  "archetype_sampled": "question",
+  "candidates": [
+    {
+      "archetype": "question",
+      "text": "남자 피부\n그냥 포기한 거예요?",
+      "visual": "거울 앞 CU, 남성이 푸석한 볼을 손끝으로 눌러보며 미묘하게 찡그리는 표정, 핸드헬드 틸트로 얼굴 클로즈업",
+      "score": 0.885,
+      "rationale": "푸석한 피부를 만지는 첫 비트를 그대로 질문으로 전환, 답을 주지 않고 궁금증만 남김"
+    },
+    {
+      "archetype": "question",
+      "text": "미스트는\n여자만 쓰는 거라고요?",
+      "visual": "가방에서 미스트 병을 꺼내는 손 CU, 병 텍스처로 푸시인 후 휩 컷으로 얼굴 각도 전환",
+      "score": 0.87,
+      "rationale": "미스트=여성 제품이라는 고정관념을 질문으로 건드려 시청자가 스스로 답을 찾고 싶게 만듦"
+    },
+    {
+      "archetype": "question",
+      "text": "얼굴 당기는데\n그냥 버티세요?",
+      "visual": "CU로 남성 얼굴 당김 표현하며 손으로 볼을 살짝 문지르는 장면, 핸드헬드 틸트",
+      "score": 0.86,
+      "rationale": "타겟이 흔히 겪는 피부 당김 상황을 직접 질문하여 공감 유도, 정답은 뒤에서 공개"
+    },
+    {
+      "archetype": "question",
+      "text": "가방 속에\n이거 하나 없으세요?",
+      "visual": "가방 안 클로즈업, 손이 미스트를 찾다가 꺼내는 순간 휩 컷, 제품 텍스처 푸시인",
+      "score": 0.86,
+      "rationale": "외출 중 간편 사용이라는 페이오프를 암시하는 질문으로 궁금증 유발, 제품명 언급 없이 궁금증 유지"
+    },
+    {
+      "archetype": "question",
+      "text": "세안 후엔\n그걸로 끝이세요?",
+      "visual": "거울 앞 CU 세안 직후 얼굴, 물기 닦아내는 손, 핸드헬드 틸트로 표정 전환",
+      "score": 0.825,
+      "rationale": "스킨케어 루틴의 다음 단계에 대한 궁금증을 자극하며 미스트 사용 전 단계로 자연스럽게 연결"
+    }
+  ],
+  "selected": {
+    "archetype": "question",
+    "text": "남자 피부\n그냥 포기한 거예요?",
+    "visual": "거울 앞 CU, 남성이 푸석한 볼을 손끝으로 눌러보며 미묘하게 찡그리는 표정, 핸드헬드 틸트로 얼굴 클로즈업",
+    "score": 0.885,
+    "rationale": "푸석한 피부를 만지는 첫 비트를 그대로 질문으로 전환, 답을 주지 않고 궁금증만 남김"
+  },
+  "selection_method": "top_k_softmax(k=3, T=0.8)",
+  "temperature": 0.9,
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}
