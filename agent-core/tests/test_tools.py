@@ -341,11 +341,12 @@ def test_an_undecodable_video_degrades_instead_of_failing(ctx, style, tmp_path):
 # offline provider declared no limit and so never exercised the budget.
 
 
-def test_multi_shot_prompts_fit_the_storyboard_entry_limit(ctx, style, brief, outline):
+def test_every_prompt_fits_the_shot_list_entry_limit(ctx, style, brief, outline):
+    """Every prompt, not only the ones that happen to share a window: `render`
+    re-packs windows whenever the storyboard or the endpoint's limits change."""
     session = make_session(ctx, style, text="겨울철 건조한 피부 관리 루틴 총정리")
     session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
     session.artifacts["casting"] = casting_tool.casting(ctx, session)
-    ctx.settings.render_mode = "multi_shot"
 
     board = storyboard_tool.storyboard(ctx, session)
 
@@ -354,26 +355,6 @@ def test_multi_shot_prompts_fit_the_storyboard_entry_limit(ctx, style, brief, ou
     for shot in board.shots:
         assert len(shot.video_prompt) <= limit, f"shot {shot.index} is over by "\
             f"{len(shot.video_prompt) - limit}"
-
-
-def test_per_shot_prompts_are_not_squeezed(ctx, style, brief, outline):
-    """The budget is a multi-shot constraint. Applying it everywhere would throw
-    away style context the top-level field has room for.
-
-    Asserted as "the full token string survives intact" rather than by comparing
-    two builds: the hook is sampled, so two storyboards of the same style differ
-    in length for reasons that have nothing to do with the budget.
-    """
-    session = make_session(ctx, style, text="겨울철 건조한 피부 관리 루틴 총정리")
-    session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
-    cast = casting_tool.casting(ctx, session)
-    session.artifacts["casting"] = cast
-    ctx.settings.render_mode = "per_shot"
-
-    board = storyboard_tool.storyboard(ctx, session)
-
-    full = storyboard_tool.style_tokens(style, cast)
-    assert all(full in shot.scene_prompt for shot in board.shots)
 
 
 def test_the_budget_only_ever_removes_whole_clauses(ctx, style, brief):

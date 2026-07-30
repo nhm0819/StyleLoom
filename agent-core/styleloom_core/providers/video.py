@@ -99,23 +99,21 @@ class MockVideoProvider(BaseVideoProvider):
         return 15.0
 
     @property
+    def max_shots_per_request(self) -> int:
+        # Same reasoning again, and this one was missing: ffmpeg will concatenate
+        # any number of cuts, so with no cap declared here a 14-cut storyboard
+        # rendered offline as a single window and passed. The real endpoint accepts
+        # six, so the first place that arrangement would have been rejected was a
+        # paid request.
+        return 6
+
+    @property
     def max_shot_prompt_chars(self) -> int:
         # Same reasoning as the window above: ffmpeg does not care how long a
         # prompt is, but if the offline provider declared no limit then the
         # budgeting that keeps storyboard entries under Kling's 512 would never
         # run in a test, and the first time it ran would be against a paid API.
         return 512
-
-    def generate(
-        self,
-        prompt: str,
-        duration: float,
-        out_path: Path,
-        first_frame: Path | None = None,
-    ) -> Path:
-        scratch = out_path.parent / f"{out_path.stem}_still.jpg"
-        opening = first_frame if first_frame is not None else self._still(prompt, scratch)
-        return push_in(opening, duration, out_path, self.settings)
 
     def generate_sequence(
         self,
@@ -132,15 +130,21 @@ class MockVideoProvider(BaseVideoProvider):
         cut in it -- which is also what the real endpoint does with it.
         """
         scratch = out_path.parent / f"{out_path.stem}_parts"
+        # The planned durations, not the requested ones. A real endpoint quantises
+        # the list and lifts a short one to its floor, so a mock that rendered the
+        # exact request would hide every consequence of that arithmetic -- caption
+        # placement and the total length both follow the plan, and offline is the
+        # only place either can be checked.
+        planned = self.plan_shot_durations([s.duration for s in shots])
         parts = []
-        for i, shot in enumerate(shots):
+        for i, (shot, seconds) in enumerate(zip(shots, planned, strict=True)):
             still = (
                 first_frame
                 if i == 0 and first_frame is not None
                 else self._still(shot.prompt, scratch / f"{i:02d}.jpg")
             )
             parts.append(
-                push_in(still, shot.duration, scratch / f"{i:02d}.mp4", self.settings)
+                push_in(still, seconds, scratch / f"{i:02d}.mp4", self.settings)
             )
         return concat(parts, out_path)
 

@@ -49,18 +49,11 @@ def run(
     data_dir: Annotated[Path | None, typer.Option("--data-dir")] = None,
     llm: Annotated[str | None, typer.Option(help="mock | anthropic")] = None,
     video: Annotated[str | None, typer.Option(help="mock | kling")] = None,
-    render_mode: Annotated[
-        str | None,
-        typer.Option(
-            "--render-mode",
-            help="per_shot (기본, 검증됨) | multi_shot (샷당 하한 없음, 비용 절감)",
-        ),
-    ] = None,
 ) -> None:
     """입력 1개로 숏폼 영상 1편을 생성합니다."""
     if not text and file is None:
         abort("need --text or --file")
-    ctx = make_context(data_dir=data_dir, llm=llm, video=video, render_mode=render_mode)
+    ctx = make_context(data_dir=data_dir, llm=llm, video=video)
     inputs = RunInputs(
         text=text, file_path=file, bgm=bgm, language=lang
     )
@@ -89,13 +82,6 @@ def batch(
     data_dir: Annotated[Path | None, typer.Option("--data-dir")] = None,
     llm: Annotated[str | None, typer.Option(help="mock | anthropic")] = None,
     video: Annotated[str | None, typer.Option(help="mock | kling")] = None,
-    render_mode: Annotated[
-        str | None,
-        typer.Option(
-            "--render-mode",
-            help="per_shot (기본, 검증됨) | multi_shot (샷당 하한 없음, 비용 절감)",
-        ),
-    ] = None,
 ) -> None:
     """서로 다른 입력 여러 개를 같은 시스템에 통과시킵니다.
 
@@ -119,7 +105,7 @@ def batch(
 
     ctx = make_context(
         data_dir=data_dir, llm=llm, video=video,
-        render_mode=render_mode, show_run_id=True,
+        show_run_id=True,
     )
     typer.echo(f"{len(items)} inputs -> style {style_id}\n")
     try:

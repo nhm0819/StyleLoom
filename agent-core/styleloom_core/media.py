@@ -1,7 +1,7 @@
 """Media primitives: ffmpeg calls and OpenCV measurement.
 
 Why this module exists as a peer of `tools/` rather than living inside them:
-in the previous layout the render stage imported the post stage (for `trim_to`)
+in the previous layout the assemble stage imported the post stage (for `concat`)
 and the QC stage imported the analyze stage (for `probe_video`). Tools calling
 tools makes the execution order implicit in the import graph, which is exactly
 what a declared plan is supposed to make explicit. So the shared operations moved
@@ -189,16 +189,22 @@ def burn_captions(
     return out_path
 
 
-def trim_to(clip: Path, seconds: float, out_path: Path) -> Path:
-    """Cut a clip to an exact length.
+def image_size(path: Path) -> tuple[int, int]:
+    """Width and height of a still, or a raise if it will not decode.
 
-    Re-encodes rather than stream-copying so the cut lands on the requested
-    frame instead of the nearest keyframe. Pacing is the property the style
-    schema exists to reproduce, so frame-accuracy here is load-bearing.
+    Used to check an image against an endpoint's constraints before it is base64'd
+    into a request body. `_download` writes whatever the response contained, so a
+    truncated or empty file is a real possibility, and the failure without this is
+    a 400 from the far end after the upload has already been paid for.
     """
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    run_ffmpeg(["-i", str(clip), "-t", f"{seconds:.3f}", *_ENCODE, "-an", str(out_path)])
-    return out_path
+    image = cv2.imread(str(path))
+    if image is None:
+        raise MediaError(
+            f"{path} is not a readable image. A zero-length or truncated file is "
+            "the usual cause -- check that the download that produced it succeeded."
+        )
+    height, width = image.shape[:2]
+    return width, height
 
 
 def concat(clips: list[Path], out_path: Path, bgm: Path | None = None) -> Path:

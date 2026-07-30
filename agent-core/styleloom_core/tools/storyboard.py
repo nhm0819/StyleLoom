@@ -135,10 +135,12 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
     casting = session.get("casting", Casting)
 
     rng = random.Random()
-    # A multi-shot entry allows 512 characters; a single-cut prompt allows
-    # thousands. Measured against the whole video_prompt, since the beat text
-    # varies per shot -- a fixed token/remainder split is wrong for the long one.
-    limit = ctx.video.max_shot_prompt_chars if ctx.settings.render_mode == "multi_shot" else 0
+    # One shot's `words` inside a shot list allows 512 characters where the whole
+    # prompt field allows thousands, and every prompt is built to the tighter number
+    # because any shot can end up sharing a window with five others. Measured against
+    # the whole video_prompt, since the beat text varies per shot -- a fixed
+    # token/remainder split is wrong for the long one.
+    limit = ctx.video.max_shot_prompt_chars
     tokens = style_tokens(style, casting)
     looks = look_tokens(style)
 

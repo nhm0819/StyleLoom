@@ -6,9 +6,9 @@ cut, so a style with 1.2s cuts pays for 3-4s per shot and throws most of it away
 How much depends on the style's own shot count, which is why this reads a saved
 `style.json` rather than quoting a generic number.
 
-It also shows what `multi_shot` would cost on endpoints that support it, since
-that is the difference between paying for the footage you use and paying for the
-floor.
+It prices the endpoint the pipeline actually renders on -- image-to-video -- and
+shows what one request per cut *would* have cost beside what a windowed request
+costs, because that difference is why the per-cut path was removed.
 
 Reported in billed seconds rather than dollars. The official platform bills
 credits against a subscription tier and publishes no per-second rate this file
@@ -111,10 +111,12 @@ def models(
     typer.echo(f"  {total:.1f}s total, {shots} shots at ~{shot_sec:.2f}s each\n")
 
     source = specs.get("pricing_source", "unknown")
-    current = ctx.settings.kling_t2v_model
+    current = ctx.settings.kling_i2v_model
 
     rows: list[tuple[str, str, str, str, str, bool]] = []
-    for model_id, spec in specs.get("text_to_video", {}).items():
+    # image_to_video, not text_to_video: the pipeline renders text -> image -> video,
+    # and pricing the fallback endpoint would describe a path that does not run.
+    for model_id, spec in specs.get("image_to_video", {}).items():
         floor = spec.get("min_duration", "?")
         elo = spec.get("quality_elo")
         billed = billed_per_shot_sec(spec, shots, shot_sec)
@@ -145,7 +147,7 @@ def models(
     width = max(len(r[0]) for r in rows)
     header = (
         f"  {'model_name':<{width}}  {'floor':>5}  {'elo':>5}  "
-        f"{'per-shot (today)':<26}  multi_shot"
+        f"{'one call per cut':<26}  multi_shot (today)"
     )
 
     typer.secho(header, bold=True)
@@ -161,32 +163,24 @@ def models(
     typer.echo()
     typer.secho(f"  * current default ({current})", fg="cyan")
     typer.echo(
-        "\n  per-shot is what this repo does today: one generation per cut, billed at\n"
-        "  the endpoint's minimum length. The wasted share is footage paid for and\n"
-        "  trimmed off, because holding the reference's pacing matters more than the\n"
-        "  saving. multi_shot carries several cuts in one request, which lowers\n"
-        "  the floor from the endpoint's minimum to 1s per cut -- not to zero: the\n"
-        "  per-shot duration is an integer, so a 0.76s cut is still billed as 1s and\n"
-        "  delivered as 1s. On a style whose cuts run under a second that trades\n"
-        "  money for pacing fidelity, which is the opposite of what this system is\n"
-        "  for. Opt-in: --render-mode multi_shot, or STYLELOOM_RENDER_MODE=multi_shot.\n"
-        "  Not the default, because the cuts then come from the model and qc's\n"
-        "  cut_timing_drift is what decides whether the timeline survived."
+        "\n  one call per cut is what this repo used to do: every cut billed at the\n"
+        "  endpoint's minimum length, with the wasted share paid for and trimmed off.\n"
+        "  multi_shot carries a window of cuts in one request, which lowers the floor\n"
+        "  from the endpoint's minimum to 1s per cut -- not to zero: a per-cut\n"
+        "  duration is a whole number of seconds, so a 0.76s cut is still billed and\n"
+        "  delivered at 1s. It is now the only path, and the cost of that is that the\n"
+        "  cuts come from the model: qc's cut_timing_drift is what decides whether\n"
+        "  the timeline survived."
     )
 
     t2i = specs.get("text_to_image", {})
-    typer.secho(
-        f"\n  current mode: {ctx.settings.render_mode}", fg="cyan", bold=True
-    )
     if ctx.settings.use_first_frame:
         # The generation count, not the cut count. One anchor for the run plus one
         # opening frame per request -- which is what makes this affordable at all,
         # since the removed design bought one image per cut and held nothing.
-        requests = shots
-        if ctx.settings.render_mode == "multi_shot":
-            spec = specs.get("image_to_video", {}).get(ctx.settings.kling_i2v_model, {})
-            multi = multi_prompt_billed_sec(spec, total, shots)
-            requests = multi[1] if multi else shots
+        spec = specs.get("image_to_video", {}).get(ctx.settings.kling_i2v_model, {})
+        windowed = multi_prompt_billed_sec(spec, total, shots)
+        requests = windowed[1] if windowed else shots
         typer.secho(
             f"  first frames: 1 anchor + {requests} opening frame(s) = "
             f"{requests + 1} image call(s)",
@@ -196,8 +190,9 @@ def models(
         typer.echo(
             "  The anchor is generated once from the cast creator and reused as the\n"
             "  reference for every opening frame, so identity survives across\n"
-            "  generations. multi_shot holds it within one request and cannot hold it\n"
-            "  between them. STYLELOOM_USE_FIRST_FRAME=false drops both the image\n"
+            "  generations. One request holds it within its own output and cannot\n"
+            "  hold it between requests.\n"
+            "  STYLELOOM_USE_FIRST_FRAME=false drops both the image\n"
             "  calls and that guarantee."
         )
     else:

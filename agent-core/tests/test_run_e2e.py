@@ -133,10 +133,10 @@ def test_a_failing_stage_is_recorded_rather_than_raised(ctx, style, sink, monkey
     record instead of propagating."""
     from styleloom_core.tools import render as render_tool
 
-    def boom(provider, shot, out_dir, persona_ref=None):
+    def boom(*args, **kwargs):
         raise RuntimeError("provider exploded")
 
-    monkeypatch.setattr(render_tool, "render_shot", boom)
+    monkeypatch.setattr(render_tool, "window_shots", boom)
     record = run_once(ctx, style.style_id, RunInputs(text=INPUTS[0]))
 
     assert record.status is RunStatus.FAILED

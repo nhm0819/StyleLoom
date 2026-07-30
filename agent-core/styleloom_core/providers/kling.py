@@ -30,6 +30,7 @@ import yaml
 
 from ..config import Settings
 from ..errors import VideoProviderError
+from ..media import image_size
 from .base import BaseVideoProvider, MotionShot
 
 
@@ -327,28 +328,12 @@ class KlingVideoProvider(BaseVideoProvider):
             spec.get("aspect_ratio_choices") or ["9:16", "16:9", "1:1"],
         )
 
-    def _duration_seconds(self, spec: dict, duration: float) -> int:
-        """Whole seconds for a single-cut request, always rounded UP.
-
-        `render_shot` trims a long clip down and cannot extend a short one, so
-        rounding to nearest would buy 4s for a 4.4s cut and leave the timeline
-        quietly short. `round()` is also banker's: round(4.5) is 4.
-        """
-        wanted = max(duration, float(spec.get("min_duration", 1)))
-        seconds = math.ceil(wanted - 1e-9)
-        return min(seconds, int(spec.get("max_duration", seconds)))
-
-    def _duration_string(self, spec: dict, duration: float) -> str:
-        """The same number as a bare string, which is what legacy `duration` takes.
-        On v3 the field is an int inside `settings` and takes the number itself."""
-        return str(self._duration_seconds(spec, duration))
-
     def shot_billed_duration(self, seconds: float) -> float:
         """One cut inside a multi-shot request, to whole seconds with a floor of 1.
 
-        Nearest rather than up, unlike `_duration_string`: a multi-shot clip is
-        never trimmed, so rounding up would stretch every video. floor(x + 0.5)
-        rather than banker's round(), where round(2.5) is 2.
+        Nearest rather than up: the cuts land inside one generation and are not
+        trimmed individually, so rounding up would stretch every video. floor(x +
+        0.5) rather than banker's round(), where round(2.5) is 2.
         """
         integral = (
             _is_v3(self.render)  # `m` in "shot n, m, words" is whole seconds
@@ -383,6 +368,7 @@ class KlingVideoProvider(BaseVideoProvider):
                 "configs/kling_models.yaml, so it cannot take a start frame. "
                 "Set STYLELOOM_USE_FIRST_FRAME=false, or pick a model that can."
             )
+        self.check_image(spec, frame, "first frame")
         encoded = self.encode_image(frame)
         if spec.get("first_frame_format") == "typed_list":
             payload[param] = [
@@ -406,6 +392,82 @@ class KlingVideoProvider(BaseVideoProvider):
             return self.i2v, self.i2v_id
         return self.t2v, self.t2v_id
 
+    # --- constraints ------------------------------------------------------- #
+    #
+    # Three checks, one constraint each, no overlap. They are separate because they
+    # are enforced at different moments: the count and the per-shot text are
+    # properties of the list the caller built, the durations are normalised while
+    # the list is turned into a request, and the assembled prompt can only be
+    # measured once it exists.
+    #
+    # All of them are cheap, and all of them guard against the same failure: this
+    # endpoint accepts a malformed shot list as ordinary prose, renders it as one
+    # long shot, reports `succeeded`, and bills it. There is nothing in the
+    # response to check afterwards, so the checking happens before.
+
+    def validate_shot_list(
+        self, spec: dict, model_id: str, shots: list[MotionShot]
+    ) -> None:
+        """The count and the per-shot text budget.
+
+        The 512-character budget is enforced on every shot, including a list of one
+        where the endpoint would allow the whole 3072: `render` re-packs windows
+        whenever the storyboard or the endpoint's limits change, so a prompt that is
+        legal only while it happens to be alone in its window is a prompt that
+        breaks on the next run. `storyboard` builds to the same number.
+        """
+        if not shots:
+            raise VideoProviderError("a render request needs at least one shot.")
+        cap = int(spec.get("max_shots_per_request", 0))
+        if cap and len(shots) > cap:
+            raise VideoProviderError(
+                f"{len(shots)} shots in one request, over {model_id}'s limit of "
+                f"{cap}. `render` packs windows to this limit, so a list this long "
+                "means max_shots_per_request in configs/kling_models.yaml "
+                "disagrees with the endpoint."
+            )
+        for index, shot in enumerate(shots, start=1):
+            self._check_shot_prompt(spec, model_id, index, shot.prompt)
+
+    @staticmethod
+    def check_image(spec: dict, path: Path, role: str) -> None:
+        """One image against the endpoint's documented limits.
+
+        Checked before the file is base64'd rather than after the far end rejects
+        it: encoding inflates the body by a third, so an oversized frame is paid for
+        in upload time before the 400 arrives, and a frame outside the ratio range
+        is rejected with nothing said about which of the two it was.
+        """
+        limits = spec.get("image_constraints") or {}
+        if not limits:
+            return
+        formats = [str(f).lower() for f in (limits.get("formats") or [])]
+        if formats and path.suffix.lower() not in formats:
+            raise VideoProviderError(
+                f"{role} {path.name} is {path.suffix or 'extensionless'}; this "
+                f"endpoint accepts {', '.join(formats)}."
+            )
+        max_bytes = int(limits.get("max_bytes", 0))
+        if max_bytes and path.stat().st_size > max_bytes:
+            raise VideoProviderError(
+                f"{role} {path.name} is {path.stat().st_size / 1e6:.1f}MB, over the "
+                f"{max_bytes / 1e6:.0f}MB this endpoint accepts."
+            )
+        width, height = image_size(path)
+        min_side = int(limits.get("min_side", 0))
+        if min_side and min(width, height) < min_side:
+            raise VideoProviderError(
+                f"{role} {path.name} is {width}x{height}; both sides must be at "
+                f"least {min_side}px."
+            )
+        max_ratio = float(limits.get("max_ratio", 0))
+        if max_ratio and not 1 / max_ratio <= width / height <= max_ratio:
+            raise VideoProviderError(
+                f"{role} {path.name} is {width}x{height}, a ratio of "
+                f"{width / height:.2f}:1. This endpoint accepts "
+                f"1:{max_ratio:g} to {max_ratio:g}:1."
+            )
+
     @staticmethod
     def _check_prompt_limit(spec: dict, model_id: str, prompt: str) -> None:
         limit = int(spec.get("max_prompt_chars", 0))
@@ -428,9 +490,10 @@ class KlingVideoProvider(BaseVideoProvider):
             raise VideoProviderError(
                 f"storyboard entry {index} is {len(prompt)} characters, "
                 f"over {model_id}'s {limit}-character limit for a shot "
-                "prompt. Shorten the style keywords, or render with "
-                "render_mode=per_shot, where the whole prompt goes in the "
-                f"top-level field ({spec.get('max_prompt_chars', '?')} chars)."
+                "prompt. Shorten the style keywords, or the `look.keywords` in "
+                "the style -- `storyboard` budgets to this number and drops "
+                "clauses to reach it, so an entry over it means the fixed part "
+                "alone no longer fits."
             )
 
     def _build_v3_payload(
@@ -485,6 +548,7 @@ class KlingVideoProvider(BaseVideoProvider):
         if spec.get("prompt_format") == "contents":
             contents: list[dict] = [{"type": "prompt", "text": text}]
             if first_frame is not None:
+                self.check_image(spec, first_frame, "first frame")
                 contents.append(
                     {
                         "type": spec.get("first_frame_type", "first_frame"),
@@ -495,35 +559,6 @@ class KlingVideoProvider(BaseVideoProvider):
         else:
             payload["prompt"] = text
         payload["settings"] = settings
-        return payload
-
-    def build_generate_payload(
-        self, prompt: str, duration: float, first_frame: Path | None = None
-    ) -> dict:
-        spec, model_id = self._spec_for(first_frame)
-        if _is_v3(spec):
-            return self._build_v3_payload(
-                spec,
-                model_id,
-                prompt,
-                self._duration_seconds(spec, duration),
-                multi_shot=False,
-                first_frame=first_frame,
-            )
-        payload: dict = {
-            "model_name": model_id,
-            "mode": self.settings.kling_mode,
-            "prompt": prompt,
-            **spec.get("defaults", {}),
-        }
-        # Only when the endpoint has nothing to read it off. With a start frame the
-        # ratio comes from the image, and stating it again can only disagree.
-        if spec.get("sends_aspect_ratio", True):
-            payload["aspect_ratio"] = self._aspect_ratio(spec)
-        if first_frame is not None:
-            self._attach_first_frame(spec, payload, first_frame)
-        payload[spec["duration_param"]] = self._duration_string(spec, duration)
-        self._check_prompt_limit(spec, model_id, prompt)
         return payload
 
     def build_image_payload(
@@ -560,6 +595,7 @@ class KlingVideoProvider(BaseVideoProvider):
                     "configs/kling_models.yaml, so it cannot hold one anchor "
                     "across frames."
                 )
+            self.check_image(spec, reference, "reference image")
             payload[param] = self.encode_image(reference)
         return payload
 
@@ -590,10 +626,21 @@ class KlingVideoProvider(BaseVideoProvider):
             # video that the storyboard asked for.
             raise VideoProviderError(
                 f"the shot list totals {total}s, over the {ceiling}s a single "
-                "request can hold. Shorten the longest cut, or render with "
-                "render_mode=per_shot, where each cut is its own request."
+                "request can hold. `render` packs windows to this ceiling, so a "
+                "list this long means one cut is longer than a whole request -- "
+                "shorten it in the storyboard."
             )
         return seconds
+
+    def plan_shot_durations(self, durations: list[float]) -> list[float]:
+        """What the render endpoint will actually run for each cut in one request.
+
+        The interface method, against the spec the caller will reach. The private
+        `plan_shot_seconds` takes a spec because payload building already knows
+        which one it is holding.
+        """
+        shots = [MotionShot(prompt="", duration=d) for d in durations]
+        return [float(s) for s in self.plan_shot_seconds(self.render, shots)]
 
     def format_semicolon_shots(
         self, shots: list[MotionShot], seconds: list[int] | None = None
@@ -628,7 +675,8 @@ class KlingVideoProvider(BaseVideoProvider):
 
         On v3 the storyboard is the prompt: one text field holding
         `shot n, m, words;` per cut, with `settings.multi_shot` on and
-        `settings.duration` equal to the sum of the shot durations.
+        `settings.duration` equal to the sum of the shot durations. A list of one
+        shot degenerates to a plain single-cut request, because that is what it is.
 
         On the legacy API it is an array instead, where `multi_shot` and
         `shot_type` must both be set for `multi_prompt` to be read at all, and
@@ -636,15 +684,23 @@ class KlingVideoProvider(BaseVideoProvider):
         """
         spec, model_id = self._spec_for(first_frame)
         if _is_v3(spec):
+            self.validate_shot_list(spec, model_id, shots)
             seconds = self.plan_shot_seconds(spec, shots)
-            for index, shot in enumerate(shots, start=1):
-                self._check_shot_prompt(spec, model_id, index, shot.prompt)
+            # A list of one shot is just a prompt. Writing `shot 1, 3, words;` for it
+            # spends the shot-list format on nothing, and it would forfeit the
+            # negative clause, which only goes on requests that are not multi-shot.
+            single = len(shots) == 1
+            text = (
+                shots[0].prompt
+                if single
+                else self.format_semicolon_shots(shots, seconds)
+            )
             return self._build_v3_payload(
                 spec,
                 model_id,
-                self.format_semicolon_shots(shots, seconds),
+                text,
                 sum(seconds),
-                multi_shot=True,
+                multi_shot=not single,
                 first_frame=first_frame,
             )
         payload: dict = {
@@ -669,9 +725,9 @@ class KlingVideoProvider(BaseVideoProvider):
         param = spec.get("multi_prompt_param")
         if not param:
             raise VideoProviderError(
-                f"{model_id} has no multi_prompt parameter. "
-                "Use render_mode=per_shot, or add the parameter name to "
-                "configs/kling_models.yaml after checking the docs."
+                f"{model_id} has no multi_prompt parameter, so it cannot carry "
+                "a shot list. Pick one of the 3.0 entries, or add the parameter "
+                "name to configs/kling_models.yaml after checking the docs."
             )
 
         entries = []
@@ -700,19 +756,6 @@ class KlingVideoProvider(BaseVideoProvider):
     ) -> Path:
         task_id = self._submit(self.t2i, self.build_image_payload(prompt, reference))
         return self._download(self._poll(self.t2i, task_id), out_path)
-
-    def generate(
-        self,
-        prompt: str,
-        duration: float,
-        out_path: Path,
-        first_frame: Path | None = None,
-    ) -> Path:
-        spec, _ = self._spec_for(first_frame)
-        task_id = self._submit(
-            spec, self.build_generate_payload(prompt, duration, first_frame)
-        )
-        return self._download(self._poll(spec, task_id), out_path)
 
     def generate_sequence(
         self,

@@ -20,7 +20,6 @@ def make_context(
     data_dir: Path | None = None,
     llm: str | None = None,
     video: str | None = None,
-    render_mode: str | None = None,
     quiet: bool = False,
     show_run_id: bool = False,
 ) -> Context:
@@ -36,8 +35,6 @@ def make_context(
         overrides["llm_provider"] = llm
     if video is not None:
         overrides["video_provider"] = video
-    if render_mode is not None:
-        overrides["render_mode"] = render_mode
 
     try:
         settings = Settings(**overrides)  # type: ignore[arg-type]
@@ -48,8 +45,7 @@ def make_context(
             # Printed before any work: discovering afterwards that a run used the
             # offline mock is the single most expensive misunderstanding here.
             typer.secho(
-                f"providers: {settings.provider_summary()} "
-                f"render={settings.render_mode}",
+                f"providers: {settings.provider_summary()}",
                 fg="bright_black",
             )
         return ctx

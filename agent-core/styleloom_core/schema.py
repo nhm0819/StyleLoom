@@ -248,10 +248,9 @@ class Keyframes(BaseModel):
     the whole design: one identity, many compositions. The previous revision of
     this project generated a frame per cut from that cut's own text and got neither.
 
-    `frames` is keyed by the index of the shot that *leads* a request -- every shot
-    in `per_shot` mode, the first shot of each window in `multi_shot`. Render looks
-    up its lead and passes the frame down; a missing key means that request falls
-    back to text-to-video rather than failing.
+    `frames` is keyed by the index of the shot that *leads* a request -- the first
+    shot of each window. Render looks up its lead and passes the frame down; a
+    missing key means that request falls back to text-to-video rather than failing.
     """
 
     anchor: Path | None = None
@@ -267,10 +266,9 @@ class Keyframes(BaseModel):
 class ClipSegment(BaseModel):
     """One rendered file and the shots it contains, in order.
 
-    A segment exists because a clip is no longer always one shot. In `per_shot`
-    mode every segment holds exactly one; in `multi_shot` mode one file carries
-    several cuts and the boundaries are timestamps inside it. Downstream code
-    reads segments and does not care which mode produced them.
+    A segment exists because a clip is not one shot. One file carries a window of
+    cuts and the boundaries are timestamps inside it, so everything downstream reads
+    segments and shot indices rather than assuming a file per cut.
     """
 
     path: Path
@@ -279,8 +277,8 @@ class ClipSegment(BaseModel):
     requested_durations: list[float] = Field(default_factory=list)
     # What the endpoint was asked to run after quantisation. Kling's per-cut
     # durations are whole seconds, so a 0.6s cut lands at 1s and captions must be
-    # placed against these. Empty means identical -- the per_shot case, where each
-    # clip is trimmed to the exact cut length first.
+    # placed against these. Empty means identical to the requested figures, which is
+    # what a provider with no quantisation of its own reports.
     billed_durations: list[float] = Field(default_factory=list)
 
     @property
@@ -297,7 +295,6 @@ class RenderResult(BaseModel):
     """Output of the render tool. Paths, not bytes, so the artifact stays
     readable and a failed run shows exactly which shots survived."""
 
-    mode: Literal["per_shot", "multi_shot"] = "per_shot"
     segments: list[ClipSegment] = Field(default_factory=list)
     errors: dict[int, str] = Field(default_factory=dict)
 

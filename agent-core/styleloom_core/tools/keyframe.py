@@ -22,8 +22,8 @@ image-to-video the start frame is the output's first frame, so two windows openi
 on identical pixels reads as the video restarting. Deriving each window's frame
 from the anchor keeps the person and the grade while letting the composition move.
 
-Cost: one image call per run plus one per render request. In multi_shot mode that
-is one per window -- three or four for a 30s video, not one per cut.
+Cost: one image call per run plus one per render request -- one per window, so
+three or four for a 30s video rather than one per cut.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from ..errors import ToolError
 from ..events import EventKind
 from ..schema import Casting, Keyframes, Shot, StyleSchema, Storyboard
 from .registry import tool
-from .render import FALLBACK_WINDOW_SEC, split_windows
+from .render import plan_windows
 from .storyboard import look_tokens
 
 if TYPE_CHECKING:
@@ -76,22 +76,14 @@ def frame_prompt(style: StyleSchema, shot: Shot) -> str:
 
 
 def lead_shots(ctx: Context, board: Storyboard) -> list[Shot]:
-    """The shots that begin a render request, under the configured render mode.
+    """The shots that begin a render request.
 
-    Windows come from `render.split_windows` rather than a second copy of the
-    packing rule. If this stage grouped shots differently from render, it would
-    generate frames keyed to leads that render never asks about, and every request
-    would silently fall back to text-to-video after paying for the images.
+    Windows come from `render.plan_windows` rather than a second copy of the packing
+    rule. If this stage grouped shots differently from render, it would generate
+    frames keyed to leads that render never asks about, and every request would
+    silently fall back to text-to-video after paying for the images.
     """
-    if ctx.settings.render_mode != "multi_shot":
-        return list(board.shots)
-    windows = split_windows(
-        board.shots,
-        ctx.video.max_shot_window_sec or FALLBACK_WINDOW_SEC,
-        ctx.video.max_shots_per_request,
-        billed=ctx.video.shot_billed_duration,
-    )
-    return [window[0] for window in windows]
+    return [window[0] for window in plan_windows(ctx, board)]
 
 
 @tool("keyframe", reads=("style", "casting", "storyboard"), writes="keyframe")

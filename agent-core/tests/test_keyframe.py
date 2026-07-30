@@ -27,7 +27,7 @@ from styleloom_core.schema import (
 )
 from styleloom_core.session import RunSession
 from styleloom_core.tools.keyframe import anchor_prompt, frame_prompt, keyframe, lead_shots
-from styleloom_core.tools.render import FALLBACK_WINDOW_SEC, split_windows
+from styleloom_core.tools.render import plan_windows
 
 
 def _board(count: int, duration: float = 1.2) -> Storyboard:
@@ -107,44 +107,24 @@ def test_a_frame_prompt_defers_to_the_anchor_for_identity(style):
 # --- the keys render will look up ----------------------------------------- #
 
 
-def test_frames_land_on_the_leads_render_asks_about_in_per_shot(
-    ctx, style, casting
-):
-    board = _board(5)
-    frames = _run(ctx, style, casting, board)
-    assert sorted(frames.frames) == [s.index for s in board.shots]
-
-
-def test_frames_land_on_window_leads_in_multi_shot(ctx, style, casting):
+def test_frames_land_on_window_leads_not_on_every_cut(ctx, style, casting):
     """One frame per generation, not per cut. This is the cost argument as well as
     the correctness one: a 30s video buys three or four images, not twenty."""
-    ctx.settings.render_mode = "multi_shot"
     board = _board(14, duration=0.8)
     frames = _run(ctx, style, casting, board)
 
-    windows = split_windows(
-        board.shots,
-        ctx.video.max_shot_window_sec or FALLBACK_WINDOW_SEC,
-        ctx.video.max_shots_per_request,
-        billed=ctx.video.shot_billed_duration,
-    )
+    windows = plan_windows(ctx, board)
     assert sorted(frames.frames) == sorted(w[0].index for w in windows)
     assert len(frames.frames) < len(board.shots)
 
 
 def test_lead_shots_uses_the_same_packing_rule_as_render(ctx):
-    """Not a second copy of the rule. If the two ever disagreed, every request
-    would fall back to text-to-video after the images had been billed."""
-    ctx.settings.render_mode = "multi_shot"
+    """Literally the same function, not a second copy of the rule. If the two ever
+    disagreed, every request would fall back to text-to-video after the images had
+    been billed."""
     board = _board(9, duration=2.0)
     leads = lead_shots(ctx, board)
-    windows = split_windows(
-        board.shots,
-        ctx.video.max_shot_window_sec or FALLBACK_WINDOW_SEC,
-        ctx.video.max_shots_per_request,
-        billed=ctx.video.shot_billed_duration,
-    )
-    assert [s.index for s in leads] == [w[0].index for w in windows]
+    assert [s.index for s in leads] == [w[0].index for w in plan_windows(ctx, board)]
 
 
 # --- refusal rather than a silent skip ------------------------------------ #

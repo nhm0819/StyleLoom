@@ -21,7 +21,7 @@ obvious place to stop:
     outline     tools/outline.py:outline            body beats, and the payoff
     hook        tools/hook.py:hook                  the non-deterministic choice
     storyboard  tools/storyboard.py:storyboard      beats -> per-shot prompts
-    render      tools/render.py:render_shot         one generation per cut
+    render      tools/render.py:render              one generation per window
     assemble    tools/assemble.py:assemble          captions, then concat
     qc          tools/qc.py:qc                      re-measure against the style
 
@@ -59,10 +59,6 @@ INPUT = RunInputs(
 # "mock" for both keeps this free and keyless. "auto" picks the real provider when
 # its key is present, which is what `styleloom run` defaults to.
 PROVIDERS = {"llm_provider": "mock", "video_provider": "mock"}
-
-# per_shot is the verified path. multi_shot exercises windowing, the Kling
-# multi_prompt payload, and the qc drift check instead.
-RENDER_MODE = "per_shot"
 
 INCLUDE_QC = True
 
@@ -114,7 +110,6 @@ def main() -> int:
     # somewhere else. Pinning it is what makes the launch directory irrelevant.
     settings = Settings(
         data_dir=REPO_ROOT / "data",
-        render_mode=RENDER_MODE,
         **PROVIDERS,
     )
     ctx = build_context(settings, events=PrintSink())

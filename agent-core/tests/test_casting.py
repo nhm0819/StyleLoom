@@ -194,7 +194,6 @@ def test_casting_makes_no_provider_calls(ctx, style, brief, monkeypatch):
     def boom(*a, **kw):
         raise AssertionError("casting called the video provider")
 
-    for name in ("generate", "generate_sequence"):
-        monkeypatch.setattr(ctx.video, name, boom)
+    monkeypatch.setattr(ctx.video, "generate_sequence", boom)
     result = C.casting(ctx, make_session(ctx, style, brief))
     assert result.creator.id

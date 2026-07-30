@@ -1,17 +1,18 @@
-"""The multi_shot render path.
+"""The render path: one generation per window of cuts.
 
-Both modes have to produce the same shape of output, because everything after
-`render` reads segments and must not care which strategy ran. What differs is
-where the cuts live: on file boundaries in `per_shot`, inside the model's output
-in `multi_shot`. These tests pin that difference down and pin down the check that
-makes the cheaper mode safe to use.
+There used to be two strategies here and these tests compared them. `per_shot` is
+gone, so what is left is the consequence of that: the cuts land inside the model's
+output rather than on file boundaries, which makes the requested timeline a request
+rather than a guarantee. These tests pin down the windowing arithmetic, the caption
+placement that follows from it, and the drift check that is now the only thing
+standing between a delivered video and a silently wrong one.
 """
 
 from __future__ import annotations
 
 import pytest
-from styleloom_core import RunInputs, RunStatus, Settings, build_context, run_once
-from styleloom_core.errors import ConfigError, ToolError
+from styleloom_core import RunInputs, RunStatus, run_once
+from styleloom_core.errors import ToolError
 from styleloom_core.media import probe_video
 from styleloom_core.providers import MotionShot
 from styleloom_core.schema import (
@@ -28,11 +29,6 @@ from styleloom_core.tools import qc as qc_tool
 from styleloom_core.tools import render as render_tool
 
 INPUT = "모공 관리 3일차 후기"
-
-
-def multi_ctx(settings: Settings, sink):
-    multi = settings.model_copy(update={"render_mode": "multi_shot"})
-    return build_context(multi, events=sink)
 
 
 def make_shots(durations: list[float]) -> list[Shot]:
@@ -52,26 +48,15 @@ def make_shots(durations: list[float]) -> list[Shot]:
     ]
 
 
-# --- configuration ----------------------------------------------------------- #
+# --- the capability is now a requirement ------------------------------------- #
 
 
-def test_per_shot_is_the_default(settings):
-    """multi_shot trades a known cost for pacing that depends on the endpoint, so
-    it must never turn itself on."""
-    assert Settings().render_mode == "per_shot"
-
-
-def test_an_unknown_render_mode_is_rejected(tmp_path):
-    with pytest.raises(ConfigError, match="render_mode"):
-        build_context(Settings(data_dir=tmp_path, render_mode="fast"))
-
-
-def test_multi_shot_on_an_incapable_provider_names_the_fix(ctx, style, monkeypatch):
+def test_an_incapable_provider_is_refused_up_front(ctx, style, monkeypatch):
+    """Carrying several cuts in one request is no longer optional, so a provider
+    that cannot do it has to be refused rather than sent one cut per request and
+    billed for the rest."""
     monkeypatch.setattr(type(ctx.video), "supports_multi_shot", property(lambda self: False))
-    monkeypatch.setattr(ctx.settings, "render_mode", "multi_shot")
 
-    session = render_tool  # placeholder to keep the import used
-    assert session is not None
     from styleloom_core.runner import prepare_session
 
     run = prepare_session(ctx, style.style_id, RunInputs(text=INPUT))
@@ -82,7 +67,7 @@ def test_multi_shot_on_an_incapable_provider_names_the_fix(ctx, style, monkeypat
     run.artifacts["casting"] = Casting(
         creator={"id": "c"}, setting={"id": "s"}  # type: ignore[arg-type]
     )
-    with pytest.raises(ToolError, match="render_mode=per_shot"):
+    with pytest.raises(ToolError, match="several cuts in one generation"):
         render_tool.render(ctx, run)
 
 
@@ -134,26 +119,23 @@ def test_the_offline_provider_really_renders_a_multi_cut_clip(ctx, tmp_path):
 # --- segments are the shared shape ------------------------------------------- #
 
 
-def test_both_modes_produce_segments_covering_every_shot(settings, sink, style, ctx):
-    per_shot = run_once(ctx, style.style_id, RunInputs(text=INPUT))
-    multi = run_once(multi_ctx(settings, sink), style.style_id, RunInputs(text=INPUT))
-    assert per_shot.status is RunStatus.DONE and multi.status is RunStatus.DONE
+def test_the_segments_cover_every_shot_in_order(settings, sink, style, ctx):
+    """Windows are an implementation detail of billing; no cut may be lost in them."""
+    record = run_once(ctx, style.style_id, RunInputs(text=INPUT))
+    assert record.status is RunStatus.DONE
 
-    cases = ((per_shot, "per_shot", ctx.runs), (multi, "multi_shot", ctx.runs))
-    for record, mode, store in cases:
-        result = RenderResult.model_validate_json(
-            (store.dir_for(record.run_id) / "render.json").read_text(encoding="utf-8")
-        )
-        assert result.mode == mode
-        board = Storyboard.model_validate_json(
-            (store.dir_for(record.run_id) / "storyboard.json").read_text(encoding="utf-8")
-        )
-        covered = [i for seg in result.segments for i in seg.shot_indices]
-        assert covered == [s.index for s in board.shots]
+    run_dir = ctx.runs.dir_for(record.run_id)
+    result = RenderResult.model_validate_json(
+        (run_dir / "render.json").read_text(encoding="utf-8")
+    )
+    board = Storyboard.model_validate_json(
+        (run_dir / "storyboard.json").read_text(encoding="utf-8")
+    )
+    covered = [i for seg in result.segments for i in seg.shot_indices]
+    assert covered == [s.index for s in board.shots]
 
 
-def test_multi_shot_uses_fewer_generations_than_cuts(settings, sink, style):
-    ctx = multi_ctx(settings, sink)
+def test_windowing_uses_fewer_generations_than_cuts(settings, sink, style, ctx):
     record = run_once(ctx, style.style_id, RunInputs(text=INPUT))
     assert record.status is RunStatus.DONE
 
@@ -165,8 +147,7 @@ def test_multi_shot_uses_fewer_generations_than_cuts(settings, sink, style):
     assert any(seg.is_multi_shot for seg in result.segments)
 
 
-def test_multi_shot_still_delivers_a_playable_video(settings, sink, style):
-    ctx = multi_ctx(settings, sink)
+def test_the_run_still_delivers_a_playable_video(settings, sink, style, ctx):
     record = run_once(ctx, style.style_id, RunInputs(text=INPUT))
     run_dir = ctx.runs.dir_for(record.run_id)
     final = run_dir / "final.mp4"
@@ -186,7 +167,6 @@ def test_multi_shot_still_delivers_a_playable_video(settings, sink, style):
 
 def test_cut_timeline_runs_across_segment_boundaries():
     result = RenderResult(
-        mode="multi_shot",
         segments=[
             ClipSegment(path="a.mp4", shot_indices=[0, 1], requested_durations=[1.2, 1.5]),
             ClipSegment(path="b.mp4", shot_indices=[2], requested_durations=[2.0]),
@@ -216,17 +196,16 @@ def test_drift_uses_nearest_neighbour_not_positional_pairing(ctx):
     assert positional_would_be_large < 1.0
 
 
-def test_qc_checks_cut_timing_in_both_modes(settings, sink, style, ctx):
-    for context in (ctx, multi_ctx(settings, sink)):
-        record = run_once(context, style.style_id, RunInputs(text=INPUT))
-        qc_path = context.runs.dir_for(record.run_id) / "qc_report.json"
-        report = QCReport.model_validate_json(qc_path.read_text(encoding="utf-8"))
-        drift = {c.name: c for c in report.checks}["cut_timing_drift"]
-        # ffmpeg cuts exactly where told and the offline sequence renderer is
-        # ffmpeg, so drift offline is near zero in both modes. On a real endpoint
-        # in multi_shot mode this is the number that decides whether the mode is
-        # usable at all -- it cannot be verified here, only reported.
-        assert drift.passed, f"unexpected offline drift: {drift.actual}"
+def test_qc_checks_cut_timing(settings, sink, style, ctx):
+    record = run_once(ctx, style.style_id, RunInputs(text=INPUT))
+    qc_path = ctx.runs.dir_for(record.run_id) / "qc_report.json"
+    report = QCReport.model_validate_json(qc_path.read_text(encoding="utf-8"))
+    drift = {c.name: c for c in report.checks}["cut_timing_drift"]
+    # ffmpeg cuts exactly where told and the offline sequence renderer is ffmpeg,
+    # so drift offline is near zero. On a real endpoint this is the number that
+    # decides whether the output is usable at all -- it cannot be verified here,
+    # only reported.
+    assert drift.passed, f"unexpected offline drift: {drift.actual}"
 
 
 # --- captions ---------------------------------------------------------------- #
@@ -270,8 +249,7 @@ def test_uncaptioned_shots_are_skipped_not_blanked():
     assert cues[0].start == pytest.approx(1.0)
 
 
-def test_multi_shot_burns_every_caption(settings, sink, style):
-    ctx = multi_ctx(settings, sink)
+def test_every_caption_is_burned(settings, sink, style, ctx):
     record = run_once(ctx, style.style_id, RunInputs(text=INPUT))
     run_dir = ctx.runs.dir_for(record.run_id)
 
@@ -288,10 +266,9 @@ def test_multi_shot_burns_every_caption(settings, sink, style):
 # --- failure isolation differs by mode --------------------------------------- #
 
 
-def test_a_failed_window_costs_every_cut_in_it(settings, sink, style, monkeypatch):
-    """The honest downside of the cheaper mode: per_shot loses one shot, multi_shot
-    loses a whole window."""
-    ctx = multi_ctx(settings, sink)
+def test_a_failed_window_costs_every_cut_in_it(settings, sink, style, ctx, monkeypatch):
+    """The honest downside of paying the duration floor once per request instead of
+    once per cut: a failure loses the whole window."""
 
     def boom(*args, **kwargs):
         raise RuntimeError("endpoint refused the sequence")

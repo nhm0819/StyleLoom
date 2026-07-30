@@ -374,28 +374,29 @@ to ~7%. So a batch of three usually gets three different archetypes and sometime
 two; the hook *text* differs every time. For guaranteed variety set
 `STYLELOOM_HOOK_RECENCY_PENALTY=0`, which makes the exclusion hard.
 
-### Render mode: `per_shot` or `multi_shot`
+### One generation per window of cuts
 
-Image-to-video bills a minimum clip length — 3s on Kling v3 — while short-form
-cuts run 1–2s. There are two ways to live with that, and the choice is yours:
+Image-to-video bills a minimum clip length — 3s on Kling v3 — while short-form cuts
+run 1–2s. There used to be two ways to live with that and a `--render-mode` flag to
+pick between them. There is one now: cuts are packed into windows that each fit one
+request, and each window is a single generation carrying its own shot list.
 
-```bash
-styleloom run my_style -t "..." --render-mode multi_shot
-```
-
-| | `per_shot` (default) | `multi_shot` |
+| | one request per cut (removed) | one request per window |
 |---|---|---|
-| Calls | one per cut | one per ~15s window |
-| Billed | the floor, every cut | the delivered length |
+| Calls | one per cut | one per ~15s window, up to 6 cuts |
+| Billed | the floor, every cut | the delivered length, 1s minimum per cut |
 | 30s / 20 cuts on Kling v3 Pro | $6.72, half discarded | **$3.36, nothing discarded** |
 | Cut timing | exact — ffmpeg trims each file | **the model's** — requested, then measured |
 | One failure costs | one shot | a whole window |
 | Captions | one per clip | placed by timestamp inside the clip |
 
-`per_shot` is the default because shot durations are exact by construction, and
-pacing is the property the style schema exists to reproduce. `multi_shot` is roughly
-half the cost and asks the endpoint to cut where told — `qc` reports
-`cut_timing_drift` so you can tell whether it complied.
+The removal accepted one real cost: the cuts now land inside the model's output, so
+the requested timeline is a request rather than a guarantee. `qc` reports
+`cut_timing_drift` — the mean distance from each requested cut to the nearest one
+actually detected in the output — and that number is what decides whether a run is
+usable. It also means the harness now *requires* an endpoint that can carry several
+cuts in one request, and `render` refuses up front rather than quietly sending one
+cut and billing for the rest.
 
 **Not verified against a paid endpoint.** Offline the sequence renderer is ffmpeg,
 which cuts exactly where told, so drift is zero in both modes and only the plumbing
@@ -516,7 +517,7 @@ and the offline mock when it is not. Injecting a key is the only step — there 
 second variable to remember. Every run prints its resolution before doing any work:
 
 ```
-providers: llm=anthropic (auto) video=kling (auto) render=per_shot
+providers: llm=anthropic (auto) video=kling (auto)
 ```
 
 Real video needs no extra install. The Kling provider signs its own JWT and posts
@@ -542,7 +543,6 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 | `STYLELOOM_KLING_TIMEOUT_SEC` | `900` | Covers queue time as well as inference |
 | `STYLELOOM_KLING_POLL_INTERVAL_SEC` | `5` | Generation is asynchronous |
 | `STYLELOOM_KLING_MAX_CONCURRENCY` | `1` | An account-tier property, so it cannot be recorded per model |
-| `STYLELOOM_RENDER_MODE` | `per_shot` | `per_shot` \| `multi_shot` |
 | `STYLELOOM_WIDTH` / `_HEIGHT` / `_FPS` | `720` / `1280` / `30` | Vertical 9:16 by default |
 | `STYLELOOM_HOOK_CANDIDATE_COUNT` | `5` | Candidates per hook generation |
 | `STYLELOOM_HOOK_TEMPERATURE` | `0.9` | |
@@ -671,8 +671,9 @@ request is rejected whole — so the deficit goes on the closing cut, where a
 stretched second is least visible, and `qc` measures the drift.
 
 `settings.multi_shot` also **defaults to true**, so a single-cut request has to send
-`false` out loud or the model is free to cut it into several — which `per_shot` mode,
-where one file is one cut, cannot survive.
+`false` out loud or the model is free to cut a single-cut request into several,
+which would put cuts in the timeline that no caption or drift check knows about.
+A shot list of one shot is sent as a plain prompt for exactly this reason.
 
 The failure mode throughout is silent: prose that does not parse as a shot list
 becomes one long shot and the task reports success. That is also why the negative
@@ -758,7 +759,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-285 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+276 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting
@@ -935,14 +936,17 @@ Two alternatives, neither needed if the above works:
   match the reference's colour grade, so the grade checks correctly fail. Making the
   mock pass its own QC would make QC meaningless. Pacing, runtime, hook window and
   cut timing *do* pass offline, because those are reproducible by construction.
-- **`multi_shot` is implemented but unproven on a real endpoint.** Offline drift is
+- **Cut timing inside a window is unproven on a real endpoint.** Offline drift is
   always zero because the offline sequence renderer *is* ffmpeg, so what has been
-  verified is the plumbing — segments, captions by timestamp, the drift check — not
-  the endpoint's obedience. `per_shot` remains the default for that reason.
-- **`per_shot` discards most of what it generates.** At 20 cuts on Kling v3 Pro it
-  bills 60s to deliver 30s. A deliberate trade: stretching shots to fill the floor
-  would destroy the pacing the style schema exists to reproduce. Run
-  `styleloom models` for the arithmetic on your own style.
+  verified is the plumbing — windowing, segments, captions by timestamp, the drift
+  check — not the endpoint's obedience to a shot list. This is the one risk the
+  removal of the per-cut path took on, and `qc`'s `cut_timing_drift` is the
+  instrument for it.
+- **A window still pays a floor, just once.** Per-cut durations are whole seconds
+  with a minimum of 1s, so a 0.76s cut is billed and delivered at 1s, and a whole
+  request cannot be shorter than 3s. `split_windows` merges a short trailing window
+  backwards to avoid buying that floor twice. Run `styleloom models` for the
+  arithmetic on your own style.
 - **Shot-size distribution is not measured.** Extraction recovers pacing and grade
   from pixels; shot size falls back to the schema default and is meant to be
   corrected via `styleloom style set`. Measuring it needs subject detection, which is

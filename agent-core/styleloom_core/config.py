@@ -22,7 +22,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 LLM_PROVIDERS = ("auto", "mock", "anthropic")
 VIDEO_PROVIDERS = ("auto", "mock", "kling")
-RENDER_MODES = ("per_shot", "multi_shot")
 KLING_MODES = ("std", "pro")
 
 
@@ -120,20 +119,6 @@ class Settings(BaseSettings):
     # Upper bound only. Providers with a lower documented limit clamp it down.
     max_concurrent_renders: int = 3
 
-    # --- render strategy -----------------------------------------------------
-    # per_shot   one generation per cut, trimmed to length with ffmpeg. Cuts land
-    #            on file boundaries, so shot durations are exact by construction.
-    #            Pays the endpoint's duration floor on every cut.
-    # multi_shot one generation carrying several cuts and their durations. Removes
-    #            the floor entirely -- roughly half the cost at short-form pacing --
-    #            but the cuts are inside the model's output, so whether the
-    #            requested timeline was honoured becomes a measurement rather than
-    #            a guarantee. QC reports the drift.
-    #
-    # Defaults to per_shot: it is the verified path, and multi_shot trades a known
-    # cost for pacing that depends on the endpoint. Opt in deliberately.
-    render_mode: str = "per_shot"  # per_shot | multi_shot
-
     # --- provider resolution ------------------------------------------------
 
     def resolved_llm_provider(self) -> str:
@@ -228,11 +213,6 @@ class Settings(BaseSettings):
             raise ConfigError(
                 f"unknown video_provider: {self.video_provider!r}. "
                 f"Expected one of {VIDEO_PROVIDERS}."
-            )
-        if self.render_mode not in RENDER_MODES:
-            raise ConfigError(
-                f"unknown render_mode: {self.render_mode!r}. "
-                f"Expected one of {RENDER_MODES}."
             )
         # Checked here rather than left to the API: `mode` is the price tier, and
         # an unrecognised value is the kind of typo that is cheaper to catch now.

@@ -20,10 +20,13 @@ import base64
 import hashlib
 import hmac
 import json
+from pathlib import Path
 
+import cv2
+import numpy as np
 import pytest
 from styleloom_core import Settings
-from styleloom_core.errors import VideoProviderError
+from styleloom_core.errors import MediaError, VideoProviderError
 from styleloom_core.providers.base import MotionShot
 from styleloom_core.providers.kling import (
     KlingVideoProvider,
@@ -48,6 +51,28 @@ def make_provider(**overrides) -> KlingVideoProvider:
     }
     fields.update(overrides)
     return KlingVideoProvider(Settings(**fields))
+
+
+def write_image(path: Path, width: int = 720, height: int = 1280) -> Path:
+    """A real decodable still.
+
+    Byte strings that merely start with a JPEG magic number used to be enough here.
+    They are not any more: the provider checks a frame's dimensions and ratio before
+    base64'ing it, and 720x1280 is what the image endpoint returns for the 9:16 1k
+    request this pipeline makes.
+    """
+    cv2.imwrite(str(path), np.full((height, width, 3), 128, dtype=np.uint8))
+    return path
+
+
+def one_cut(provider, prompt: str = "p", duration: float = 3.0, frame=None) -> dict:
+    """A request carrying a single cut.
+
+    `build_generate_payload` used to be a second entry point for this. It went with
+    `per_shot`: every render request now carries a shot list, and a list of one shot
+    is a request with one shot in it.
+    """
+    return provider.build_sequence_payload([MotionShot(prompt, duration)], frame)
 
 
 def legacy_provider(**overrides) -> KlingVideoProvider:
@@ -134,14 +159,14 @@ def _unpad(segment: str) -> bytes:
 def test_a_vertical_ratio_is_asked_for_rather_than_a_pixel_size():
     """The API has no width/height, only a ratio enum. On 3.0 it lives inside
     `settings`; at the top level it is ignored."""
-    payload = make_provider().build_generate_payload("a face", 3.0)
+    payload = one_cut(make_provider(), "a face")
     assert payload["settings"]["aspect_ratio"] == "9:16"
     assert "width" not in payload and "height" not in payload
     assert "aspect_ratio" not in payload
 
 
 def test_landscape_settings_pick_a_landscape_ratio():
-    payload = make_provider(width=1920, height=1080).build_generate_payload("x", 3.0)
+    payload = one_cut(make_provider(width=1920, height=1080), "x")
     assert payload["settings"]["aspect_ratio"] == "16:9"
 
 
@@ -158,7 +183,7 @@ def test_text_to_video_keeps_a_top_level_prompt_string():
     takes a typed `contents` array because it also carries the start frame, and
     text-to-video, having no image, keeps a `prompt` string. A `contents` array sent
     here is ignored and the task fails on a missing prompt."""
-    payload = make_provider().build_generate_payload("she smiles", 1.0)
+    payload = one_cut(make_provider(), "she smiles", 1.0)
     assert payload["prompt"].startswith("she smiles")
     assert "contents" not in payload
     assert set(payload) == {"prompt", "settings"}
@@ -166,33 +191,16 @@ def test_text_to_video_keeps_a_top_level_prompt_string():
         assert gone not in payload
 
 
-def test_the_legacy_endpoint_still_builds_the_flat_request():
-    payload = legacy_provider().build_generate_payload("she smiles", 1.0)
-    assert payload["model_name"] == V3
-    assert payload["mode"] == "std"
-    assert payload["prompt"] == "she smiles"
-    # There is no start frame, so the ratio has to be stated rather than inferred.
-    assert payload["aspect_ratio"] == "9:16"
-    assert "image" not in payload
-
-
-def test_duration_is_a_bare_string_at_or_above_the_floor():
-    """A 0.76s cut cannot be bought; the endpoint floor is what gets billed."""
-    payload = legacy_provider().build_generate_payload("p", 0.76)
-    assert payload["duration"] == "3"
-    assert isinstance(payload["duration"], str)
-
-
 def test_duration_is_capped_at_the_endpoint_maximum():
-    payload = make_provider().build_generate_payload("p", 99.0)
-    assert payload["settings"]["duration"] == 15
+    with pytest.raises(VideoProviderError, match="over the 15s"):
+        one_cut(make_provider(), "p", 99.0)
 
 
 def test_audio_is_off_by_default():
     """Captions are burned in and the reference set has no dialogue, so audio is
     a surcharge for something the output discards. `sound` was the legacy name."""
-    assert make_provider().build_generate_payload("p", 3.0)["settings"]["audio"] == "off"
-    assert legacy_provider().build_generate_payload("p", 3.0)["sound"] == "off"
+    assert one_cut(make_provider())["settings"]["audio"] == "off"
+    assert one_cut(legacy_provider())["sound"] == "off"
 
 
 
@@ -267,21 +275,6 @@ def test_concurrency_comes_from_settings_not_the_spec():
 # the wrong direction for per_shot.
 
 
-@pytest.mark.parametrize("wanted", [3.4, 4.4, 4.5, 6.49, 10.01])
-def test_per_shot_never_buys_a_clip_shorter_than_the_cut(wanted):
-    """`render_shot` trims a long clip down and cannot extend a short one, so
-    rounding down leaves the timeline quietly short with nothing to notice it."""
-    sent = make_provider().build_generate_payload("p", wanted)["settings"]["duration"]
-    assert sent >= wanted
-
-
-def test_per_shot_rounds_up_rather_than_to_nearest():
-    """4.4s asked for as 4s was a real bug: the clip came back 0.4s short and
-    passed straight through, because the trim only fires when the clip is long."""
-    payload = make_provider().build_generate_payload("p", 4.4)
-    assert payload["settings"]["duration"] == 5
-
-
 def test_multi_shot_rounds_to_nearest_not_up():
     """The opposite rule, on purpose. A multi-shot clip is never trimmed, so
     rounding up would stretch every video; nearest minimises total drift."""
@@ -306,9 +299,9 @@ def test_the_payload_and_the_planner_agree_on_shot_length():
 def test_every_model_enforces_the_prompt_limits(model_name):
     """The omni entry was missing both limits and the negative prompt, so
     switching to it silently turned off caption suppression and the budget."""
-    provider = make_provider(kling_t2v_model=model_name)
+    provider = make_provider(kling_t2v_model=model_name, kling_i2v_model=V3)
     assert provider.max_shot_prompt_chars == 512
-    assert provider.build_generate_payload("x", 3.0)["negative_prompt"]
+    assert one_cut(provider)["negative_prompt"]
     with pytest.raises(VideoProviderError, match="over"):
         provider.build_sequence_payload([MotionShot("x" * 600, 1.0)])
 
@@ -355,8 +348,7 @@ def test_an_image_payload_without_a_reference_sends_no_reference_field():
 def test_a_reference_is_raw_base64_with_no_data_uri_prefix(tmp_path):
     """The prefix is a documented 400, and every browser-facing base64 example
     carries one, so this is the easiest mistake in the whole integration."""
-    ref = tmp_path / "anchor.jpg"
-    ref.write_bytes(b"\xff\xd8\xff\xe0jpegbytes")
+    ref = write_image(tmp_path / "anchor.jpg")
     payload = make_provider().build_image_payload("same person, wider", ref)
     assert payload["image"] == base64.b64encode(ref.read_bytes()).decode()
     assert not payload["image"].startswith("data:")
@@ -367,8 +359,7 @@ def test_a_reference_is_not_prefixed_with_an_undocumented_token(tmp_path):
     token addressing of any kind -- the reference is the `image` field. So the
     prefix addressed nothing and put twelve literal characters at the front of the
     prompt, where the model weights most heavily."""
-    ref = tmp_path / "anchor.jpg"
-    ref.write_bytes(b"x")
+    ref = write_image(tmp_path / "anchor.jpg")
     payload = make_provider().build_image_payload("wider angle", ref)
     assert payload["prompt"] == "wider angle"
     assert payload["image"]
@@ -378,9 +369,7 @@ def test_a_reference_is_not_prefixed_with_an_undocumented_token(tmp_path):
 
 
 def _frame(tmp_path):
-    path = tmp_path / "lead.jpg"
-    path.write_bytes(b"\xff\xd8\xff\xe0frame")
-    return path
+    return write_image(tmp_path / "lead.jpg")
 
 
 def test_omni_carries_the_first_frame_as_a_typed_list_entry(tmp_path):
@@ -389,7 +378,7 @@ def test_omni_carries_the_first_frame_as_a_typed_list_entry(tmp_path):
     and nothing in the response says so."""
     frame = _frame(tmp_path)
     provider = make_provider(kling_i2v_model=OMNI)
-    payload = provider.build_generate_payload("she smiles", 3.0, frame)
+    payload = one_cut(provider, "she smiles", 3.0, frame)
     assert payload["model_name"] == OMNI
     entry = payload["image_list"][0]
     assert entry["type"] == "first_frame"
@@ -401,7 +390,7 @@ def test_the_non_omni_endpoint_takes_a_flat_base64_field(tmp_path):
     """Two shapes for the same concept. A flat string sent to omni, or a list sent
     to image2video, is the silent-ignore failure this spec file exists to prevent."""
     provider = make_provider(kling_i2v_model=V3)
-    payload = provider.build_generate_payload("p", 3.0, _frame(tmp_path))
+    payload = one_cut(provider, "p", 3.0, _frame(tmp_path))
     assert isinstance(payload["image"], str)
     assert "image_list" not in payload
 
@@ -413,7 +402,7 @@ def test_a_request_with_a_start_frame_states_no_aspect_ratio(tmp_path):
     Checked inside `settings` as well as at the top level: this test passed while
     the ratio was being sent one level down, because 3.0 moved the field there.
     """
-    payload = make_provider().build_generate_payload("p", 3.0, _frame(tmp_path))
+    payload = one_cut(make_provider(), "p", 3.0, _frame(tmp_path))
     assert "aspect_ratio" not in payload
     assert "aspect_ratio" not in payload["settings"]
 
@@ -421,7 +410,7 @@ def test_a_request_with_a_start_frame_states_no_aspect_ratio(tmp_path):
 def test_no_start_frame_still_states_the_ratio():
     """The other half of the rule: text-to-video has nothing to read it off, and
     `aspect_ratio` is a field on that endpoint only."""
-    payload = make_provider().build_generate_payload("p", 3.0)
+    payload = one_cut(make_provider())
     assert "aspect_ratio" in payload["settings"]
 
 
@@ -482,7 +471,7 @@ def test_a_v3_sequence_carries_the_shot_list_in_the_prompt_and_no_array(tmp_path
 
 
 def test_the_v3_request_is_contents_and_settings_and_nothing_flat(tmp_path):
-    payload = make_provider().build_generate_payload("she smiles", 6.0, _frame(tmp_path))
+    payload = one_cut(make_provider(), "she smiles", 6.0, _frame(tmp_path))
     assert set(payload) == {"contents", "settings"}
     for gone in ("model_name", "mode", "prompt", "image", "duration", "aspect_ratio"):
         assert gone not in payload, f"{gone} is a legacy field, silently ignored on 3.0"
@@ -490,7 +479,7 @@ def test_the_v3_request_is_contents_and_settings_and_nothing_flat(tmp_path):
 
 def test_the_v3_prompt_and_frame_are_typed_entries_in_contents(tmp_path):
     frame = _frame(tmp_path)
-    contents = make_provider().build_generate_payload("she smiles", 3.0, frame)["contents"]
+    contents = one_cut(make_provider(), "she smiles", 3.0, frame)["contents"]
     assert contents[0]["type"] == "prompt"
     assert contents[0]["text"].startswith("she smiles")
     assert contents[1]["type"] == "first_frame"
@@ -501,7 +490,7 @@ def test_the_v3_prompt_and_frame_are_typed_entries_in_contents(tmp_path):
 def test_v3_duration_is_an_int_inside_settings(tmp_path):
     """A bare string was right for the legacy `duration` field and is the wrong
     type here, where the schema is an int enum."""
-    settings = make_provider().build_generate_payload("p", 6.0, _frame(tmp_path))["settings"]
+    settings = one_cut(make_provider(), "p", 6.0, _frame(tmp_path))["settings"]
     assert settings["duration"] == 6
     assert isinstance(settings["duration"], int)
 
@@ -509,14 +498,14 @@ def test_v3_duration_is_an_int_inside_settings(tmp_path):
 def test_a_single_cut_v3_request_turns_multi_shot_off_explicitly(tmp_path):
     """`multi_shot` defaults to TRUE on this API. Left unsaid, the model may cut
     one shot into several -- and per_shot mode trims one file as one cut."""
-    settings = make_provider().build_generate_payload("p", 3.0, _frame(tmp_path))["settings"]
+    settings = one_cut(make_provider(), "p", 3.0, _frame(tmp_path))["settings"]
     assert settings["multi_shot"] is False
 
 
 def test_v3_audio_is_off_and_no_negative_prompt_is_sent(tmp_path):
     """`sound` and `negative_prompt` are legacy names. The audio switch is
     `settings.audio`; the negative field does not exist at all."""
-    payload = make_provider().build_generate_payload("p", 3.0, _frame(tmp_path))
+    payload = one_cut(make_provider(), "p", 3.0, _frame(tmp_path))
     assert payload["settings"]["audio"] == "off"
     assert "sound" not in payload["settings"]
     assert "negative_prompt" not in payload["settings"]
@@ -526,8 +515,8 @@ def test_the_quality_tier_becomes_a_resolution_because_mode_does_not_exist(tmp_p
     """`mode` is not a field on 3.0, so std/pro would have silently done nothing.
     It means what it always meant: std renders 720p, pro 1080p."""
     frame = _frame(tmp_path)
-    std = make_provider().build_generate_payload("p", 3.0, frame)
-    pro = make_provider(kling_mode="pro").build_generate_payload("p", 3.0, frame)
+    std = one_cut(make_provider(), "p", 3.0, frame)
+    pro = one_cut(make_provider(kling_mode="pro"), "p", 3.0, frame)
     assert std["settings"]["resolution"] == "720p"
     assert pro["settings"]["resolution"] == "1080p"
 
@@ -563,7 +552,7 @@ def test_a_shot_list_longer_than_one_request_is_refused_not_truncated(tmp_path):
 def test_the_negative_clause_goes_in_the_prompt_on_single_cut_requests(tmp_path):
     """There is no negative_prompt field on 3.0 -- the prompt itself carries
     negative descriptions, so the clause has to be inside the text or nowhere."""
-    payload = make_provider().build_generate_payload("she smiles", 3.0, _frame(tmp_path))
+    payload = one_cut(make_provider(), "she smiles", 3.0, _frame(tmp_path))
     assert "captions" in payload["contents"][0]["text"]
 
 
@@ -589,6 +578,72 @@ def test_text_to_video_carries_a_shot_list_the_same_way():
     assert payload["prompt"] == "shot 1, 2, wide; shot 2, 3, close;"
     assert payload["settings"]["duration"] == 5
     assert payload["settings"]["multi_shot"] is True
+
+
+# --- constraints ----------------------------------------------------------- #
+#
+# Checked before anything is spent, because there is nothing to check afterwards:
+# a malformed shot list is read as prose, rendered as one long shot, reported as
+# `succeeded` and billed.
+
+
+def test_more_shots_than_one_request_holds_is_refused(tmp_path):
+    """1-6 shots per request. `render` packs to the cap, so a longer list means the
+    cap in the spec file disagrees with the endpoint."""
+    shots = [MotionShot(f"cut {i}", 2.0) for i in range(7)]
+    with pytest.raises(VideoProviderError, match="limit of 6"):
+        make_provider().build_sequence_payload(shots, _frame(tmp_path))
+
+
+def test_an_empty_shot_list_is_refused(tmp_path):
+    with pytest.raises(VideoProviderError, match="at least one shot"):
+        make_provider().build_sequence_payload([], _frame(tmp_path))
+
+
+def test_the_512_budget_applies_even_to_a_lone_shot(tmp_path):
+    """The endpoint would allow the whole 3072 for a single cut, and the budget is
+    still 512: `render` re-packs windows whenever the storyboard or the endpoint's
+    limits change, so a prompt that is legal only while it happens to be alone in
+    its window breaks on the next run."""
+    with pytest.raises(VideoProviderError, match="512-character limit"):
+        one_cut(make_provider(), "x" * 600, 3.0, _frame(tmp_path))
+
+
+def test_a_frame_below_the_minimum_side_is_refused(tmp_path):
+    frame = write_image(tmp_path / "small.jpg", 200, 400)
+    with pytest.raises(VideoProviderError, match="at least 300px"):
+        one_cut(make_provider(), "p", 3.0, frame)
+
+
+def test_a_frame_outside_the_ratio_range_is_refused(tmp_path):
+    """1:2.5 to 2.5:1. A 9:16 vertical frame is 0.56 and legal; 300x1200 is not."""
+    frame = write_image(tmp_path / "tall.jpg", 300, 1200)
+    with pytest.raises(VideoProviderError, match="1:2.5 to 2.5:1"):
+        one_cut(make_provider(), "p", 3.0, frame)
+
+
+def test_the_frame_this_pipeline_actually_produces_passes(tmp_path):
+    """720x1280 is what the image endpoint returns for a 9:16 1k request."""
+    frame = write_image(tmp_path / "ok.jpg", 720, 1280)
+    assert one_cut(make_provider(), "p", 3.0, frame)["contents"][1]["url"]
+
+
+def test_an_unreadable_frame_is_caught_before_it_is_uploaded(tmp_path):
+    """`_download` writes whatever the response contained, so a truncated file is a
+    real possibility -- and base64 inflates the body by a third before the far end
+    gets a chance to reject it."""
+    frame = tmp_path / "truncated.jpg"
+    frame.write_bytes(b"\xff\xd8\xff\xe0")
+    with pytest.raises(MediaError, match="not a readable image"):
+        one_cut(make_provider(), "p", 3.0, frame)
+
+
+def test_a_frame_in_an_unsupported_format_is_refused(tmp_path):
+    frame = write_image(tmp_path / "frame.png", 720, 1280).rename(
+        tmp_path / "frame.webp"
+    )
+    with pytest.raises(VideoProviderError, match="accepts"):
+        one_cut(make_provider(), "p", 3.0, frame)
 
 
 # --- the 3.0 task endpoint ------------------------------------------------- #

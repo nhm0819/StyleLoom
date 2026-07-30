@@ -159,13 +159,11 @@ def doctor(
         except Exception as exc:  # noqa: BLE001 - reported, not raised
             line(False, label, str(exc))
 
-    line(True, "render mode", settings.render_mode)
-    if settings.render_mode == "multi_shot":
-        typer.secho(
-            "      cuts land inside the model's output, so shot timing is measured "
-            "rather than guaranteed -- check qc's cut_timing_drift.",
-            fg="yellow",
-        )
+    typer.secho(
+        "      cuts land inside the model's output, so shot timing is measured "
+        "rather than guaranteed -- check qc's cut_timing_drift.",
+        fg="yellow",
+    )
     line(True, "data dir", str(settings.data_dir.resolve()))
     line(True, "tools", ", ".join(registry.names()))
 

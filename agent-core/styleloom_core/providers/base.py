@@ -5,13 +5,18 @@ few months -- several of the current leaders did not exist a year ago. Hardcodin
 one gives the harness a shelf life; keeping the choice in settings means someone
 else can point this at whatever is best when they read it.
 
-Three methods rather than two, because consistency needs a stage that text-to-video
-does not have. Multi-shot requests hold identity *within* one generation and cannot
-hold it between them; a first frame carried into every request holds it across all
-of them. `generate_image` produces that frame, and both render methods accept it.
+Two generating methods, because consistency needs a stage that video generation
+does not have on its own. One request holds identity *within* its own generation and
+cannot hold it between requests; a first frame carried into every request holds it
+across all of them. `generate_image` produces that frame and `generate_sequence`
+accepts it.
 
-`first_frame` is optional on both, so a provider that cannot take one still works
-and a run configured without one still renders.
+There is no single-cut method. Every render request carries a shot list, and a list
+of one shot is a request with one shot in it -- a second entry point for that case
+would be a second place for the payload shape to drift.
+
+`first_frame` is optional, so a provider that cannot take one still works and a run
+configured without one still renders.
 """
 
 from __future__ import annotations
@@ -102,6 +107,19 @@ class BaseVideoProvider:
         """
         return seconds
 
+    def plan_shot_durations(self, durations: list[float]) -> list[float]:
+        """What the endpoint will actually run for each cut in one request.
+
+        Separate from `shot_billed_duration` because the binding constraint is on
+        the list, not on any one cut: an endpoint whose request-level duration must
+        equal the sum of its shots, and which has a floor of its own, cannot honour
+        a list that quantises to less than that floor -- so a short list is lifted
+        as a whole rather than cut by cut. Callers place captions against the result
+        and trim against it, so it has to be the endpoint's arithmetic and not a
+        second copy of it.
+        """
+        return [self.shot_billed_duration(d) for d in durations]
+
     def generate_image(
         self, prompt: str, out_path: Path, reference: Path | None = None
     ) -> Path:
@@ -111,16 +129,6 @@ class BaseVideoProvider:
         is the whole reason this method exists rather than each frame being an
         independent roll. Only called when `supports_first_frame`.
         """
-        raise NotImplementedError
-
-    def generate(
-        self,
-        prompt: str,
-        duration: float,
-        out_path: Path,
-        first_frame: Path | None = None,
-    ) -> Path:
-        """One cut. From `first_frame` when given, from text alone otherwise."""
         raise NotImplementedError
 
     def generate_sequence(
