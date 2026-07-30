@@ -45,6 +45,50 @@ FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
 
+# Lines past this are discarded, not shrunk. Named so `budget.caption_chars` can
+# derive the caption budget from it instead of restating the number.
+CAPTION_MAX_LINES = 3
+
+
+# Fraction of the frame width a caption line may occupy, and the stroke drawn
+# around the glyphs. `borderw` is an int option in drawtext -- unlike `fontsize` it
+# takes no expression -- so it stays constant and is simply subtracted from the
+# budget below.
+CAPTION_WIDTH_FRACTION = 0.92
+CAPTION_BORDER_PX = 6
+
+# Ceiling on the share of frame height that a full caption block may occupy. Only
+# binds on wide frames, where the width budget alone would allow a font tall enough
+# to cover the shot.
+CAPTION_HEIGHT_FRACTION = 0.40
+
+
+def caption_fontsize_expr(max_chars_per_line: int) -> str:
+    """An ffmpeg expression for a font size that keeps a full line inside the frame.
+
+    The size has to come from the *width*, because that is the dimension the text
+    has to fit. It used to be `h/18`, which on a 9:16 frame is the long edge: at
+    720x1280 that is a 71px font, and a full 12-character line of CJK is then ~852px
+    of text in a 720px frame. drawtext centres with `x=(w-text_w)/2`, which simply
+    goes negative, so the caption was clipped on both sides rather than shrunk.
+
+    A CJK glyph is an em square, so its advance width is the font size -- which
+    makes `chars * fontsize` the width of a worst-case line and lets the budget be
+    solved directly. Latin text is narrower than that and so lands well inside the
+    budget; the reference styles are Korean, so the square case is the one to size
+    for.
+
+    Written as an expression rather than computed in Python because it then adapts
+    to whatever the clip actually is. Sizing off `Settings.width` would go wrong
+    exactly when it matters: a clip that came back from the endpoint at a different
+    resolution than the one requested.
+    """
+    chars = max(max_chars_per_line, 1)
+    budget = f"(w*{CAPTION_WIDTH_FRACTION}-{2 * CAPTION_BORDER_PX})/{chars}"
+    ceiling = f"h*{CAPTION_HEIGHT_FRACTION}/{CAPTION_MAX_LINES}"
+    return f"min({budget},{ceiling})"
+
+
 Y_BY_POS = {
     "top": "h*0.12",
     "center": "(h-text_h)/2",
@@ -92,11 +136,6 @@ def filter_path(path: str | Path) -> str:
     A no-op on POSIX paths, which contain neither a colon nor a backslash.
     """
     return str(path).replace("\\", "/").replace(":", "\\\\:")
-
-
-# Lines past this are discarded, not shrunk. Named so `budget.caption_chars` can
-# derive the caption budget from it instead of restating the number.
-CAPTION_MAX_LINES = 3
 
 
 def wrap_caption(text: str, width: int, max_lines: int = CAPTION_MAX_LINES) -> str:
@@ -181,8 +220,11 @@ def burn_captions(
             f"drawtext=fontfile={filter_path(font)}"
             f":textfile={filter_path(text_path)}"
             f":fontcolor={style.color}"
-            f":fontsize=h/18"
-            f":borderw=6:bordercolor={style.stroke_color}"
+            # Quoted, like `alpha` below: the expression contains a comma and the
+            # filters are joined by commas, so unquoted it would be read as the end
+            # of this filter and the start of another.
+            f":fontsize='{caption_fontsize_expr(style.max_chars_per_line)}'"
+            f":borderw={CAPTION_BORDER_PX}:bordercolor={style.stroke_color}"
             f":line_spacing=10"
             f":x=(w-text_w)/2"
             f":y={Y_BY_POS.get(style.pos, 'h*0.62')}"
