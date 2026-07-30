@@ -1,0 +1,56 @@
+{
+  "style_id": "reference2",
+  "checks": [
+    {
+      "name": "avg_shot_sec",
+      "target": 4.044,
+      "actual": 4.014,
+      "tolerance": 0.607,
+      "passed": true
+    },
+    {
+      "name": "total_duration",
+      "target": 12.13,
+      "actual": 12.04,
+      "tolerance": 1.213,
+      "passed": true
+    },
+    {
+      "name": "saturation",
+      "target": 0.371,
+      "actual": 0.374,
+      "tolerance": 0.18,
+      "passed": true
+    },
+    {
+      "name": "contrast",
+      "target": 0.379,
+      "actual": 0.519,
+      "tolerance": 0.2,
+      "passed": true
+    },
+    {
+      "name": "warmth",
+      "target": 0.519,
+      "actual": 0.59,
+      "tolerance": 0.12,
+      "passed": true
+    },
+    {
+      "name": "hook_window_shots",
+      "target": 1.0,
+      "actual": 1.0,
+      "tolerance": 0.5,
+      "passed": true
+    },
+    {
+      "name": "cut_timing_drift",
+      "target": 0.0,
+      "actual": 2.458,
+      "tolerance": 0.35,
+      "passed": false
+    }
+  ],
+  "score": 0.857,
+  "passed": true
+}

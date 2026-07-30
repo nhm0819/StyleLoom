@@ -1,0 +1,75 @@
+{
+  "style_id": "reference2",
+  "created_at": "2026-07-30T15:10:19+00:00",
+  "source_refs": [
+    "reference2.mp4"
+  ],
+  "total_duration": 12.13,
+  "beat_pattern": [
+    "hook",
+    "context",
+    "turn",
+    "payoff",
+    "cta"
+  ],
+  "pacing": {
+    "avg_shot_sec": 4.044,
+    "shot_count": 3,
+    "cut_style": "static selfie shots cut on action beats, quick front-loaded cut",
+    "cut_times": [
+      3.933,
+      8.133
+    ]
+  },
+  "camera": {
+    "shot_size_dist": {
+      "CU": 0.5,
+      "MS": 0.35,
+      "WS": 0.15
+    },
+    "moves": [
+      "mostly static handheld",
+      "slight natural sway",
+      "hand-to-camera product motion"
+    ]
+  },
+  "look": {
+    "grade": "warm soft beauty grade, low-mid contrast, peachy skin tones",
+    "saturation": 0.371,
+    "contrast": 0.379,
+    "warmth": 0.519,
+    "keywords": [
+      "GRWM",
+      "beauty",
+      "skincare",
+      "selfie",
+      "TikTok",
+      "close-up"
+    ],
+    "detail": {
+      "subject": "young woman's face in tight selfie framing, centered, hands holding product below chin",
+      "lighting": "soft diffuse frontal light, flat even fill, neutral color temperature",
+      "texture": "dewy glowing skin, glossy pigmented lips, smooth matte wall behind",
+      "palette": "warm beige skin tones, soft pink blush and lipgloss, muted cream background",
+      "lens": "shallow depth of field, front-facing phone camera focal length, soft edge falloff",
+      "motion_feel": "static handheld selfie cut on product reveals and small hand gestures"
+    }
+  },
+  "caption": {
+    "pos": "center_lower",
+    "anim": "pop_in",
+    "max_chars_per_line": 14,
+    "color": "white",
+    "stroke_color": "black"
+  },
+  "audio": {
+    "bpm": 114.3,
+    "voice_tone": "warm intimate confiding voiceover, close-mic ASMR-adjacent"
+  },
+  "hook_style": {
+    "window_sec": 3.0,
+    "shot_size": "CU",
+    "cut_count": 1
+  },
+  "notes": "vertical phone-shot beauty tutorial, TikTok watermark overlay, plain interior backdrop"
+}

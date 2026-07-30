@@ -1,0 +1,58 @@
+{
+  "archetype_pool": [
+    "question",
+    "reversal",
+    "shock_number",
+    "empathy",
+    "visual_impact",
+    "contradiction"
+  ],
+  "archetype_sampled": "question",
+  "candidates": [
+    {
+      "archetype": "question",
+      "text": "화장 몇 시간 뒤\n거울 보기\n무서우세요?",
+      "visual": "20대 흑인 여성이 거울을 들고 건조하고 칙칙해진 얼굴을 클로즈업으로 비추는 장면, 자연광 실내",
+      "score": 0.865,
+      "rationale": "화장 후 피부 상태에 대한 불안을 직접 질문으로 던져 시청자의 경험을 자극하고 답을 유보한다."
+    },
+    {
+      "archetype": "question",
+      "text": "왜 오후만 되면\n피부가 칙칙해질까요?",
+      "visual": "여성이 손거울로 얼굴을 비추며 미간을 찌푸리는 클로즈업, 정적인 핸드헬드 카메라, 따뜻한 조명",
+      "score": 0.844,
+      "rationale": "많은 사람이 겪는 오후 피부 칙칙함 현상을 궁금증으로 남겨 다음 장면의 원인 설명을 기대하게 만든다."
+    },
+    {
+      "archetype": "question",
+      "text": "가방 속 미스트,\n왜 다들 챙길까요?",
+      "visual": "여성이 가방 속 미스트를 꺼내 클로즈업으로 라벨을 보여주는 손 동작, 자연스러운 흔들림",
+      "score": 0.851,
+      "rationale": "휴대용 미스트 사용 이유를 질문으로 남겨 성분과 효과에 대한 궁금증을 유도한다."
+    },
+    {
+      "archetype": "question",
+      "text": "그 촉촉함,\n하루 종일\n갈 수 있을까요?",
+      "visual": "여성이 얼굴에 미스트를 뿌리는 클로즈업, 물방울이 피부에 맺히는 장면, 따뜻한 조명",
+      "score": 0.876,
+      "rationale": "지속력에 대한 의문을 던져 body에서 성분과 결과로 답을 제시하는 구조를 완성한다."
+    },
+    {
+      "archetype": "question",
+      "text": "이 성분,\n왜 다들\n찾는 걸까요?",
+      "visual": "미스트 라벨 클로즈업, 히알루론산·나이아신아마이드 성분 표시가 선명하게 보이는 손 동작",
+      "score": 0.866,
+      "rationale": "성분에 대한 호기심을 자극하는 질문으로, 이후 성분 효과와 피부 결과로 답을 완성한다."
+    }
+  ],
+  "selected": {
+    "archetype": "question",
+    "text": "그 촉촉함,\n하루 종일\n갈 수 있을까요?",
+    "visual": "여성이 얼굴에 미스트를 뿌리는 클로즈업, 물방울이 피부에 맺히는 장면, 따뜻한 조명",
+    "score": 0.876,
+    "rationale": "지속력에 대한 의문을 던져 body에서 성분과 결과로 답을 제시하는 구조를 완성한다."
+  },
+  "selection_method": "top_k_softmax(k=3, T=0.8)",
+  "temperature": 0.9,
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

@@ -1,0 +1,27 @@
+{
+  "creator": {
+    "id": "young_man_casual",
+    "label": "20대 남성 · 캐주얼",
+    "prompt": "a Korean man in his mid-20s, clear skin, short tidy dark hair, plain grey crewneck sweatshirt, relaxed friendly expression"
+  },
+  "setting": {
+    "id": "bright_bathroom",
+    "label": "밝은 욕실 세면대",
+    "prompt": "a bright modern bathroom vanity, white tile, large mirror, soft daylight from a frosted window, minimal clutter"
+  },
+  "creator_pool": [
+    "young_woman_casual",
+    "young_woman_polished",
+    "young_man_casual",
+    "woman_30s_editorial",
+    "hands_only"
+  ],
+  "setting_pool": [
+    "bright_bathroom",
+    "bedroom_vanity",
+    "sunlit_kitchen",
+    "studio_seamless",
+    "cafe_window"
+  ],
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

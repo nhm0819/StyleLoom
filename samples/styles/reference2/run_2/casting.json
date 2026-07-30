@@ -1,0 +1,27 @@
+{
+  "creator": {
+    "id": "young_woman_casual",
+    "label": "20대 여성 · 편안한 홈웨어",
+    "prompt": "a Korean woman in her mid-20s, natural bare-faced makeup, soft shoulder-length hair, oversized cream cotton sweatshirt, warm and approachable expression"
+  },
+  "setting": {
+    "id": "studio_seamless",
+    "label": "무배경 스튜디오",
+    "prompt": "a seamless studio backdrop in soft pastel, even diffused lighting, no props, product-forward framing"
+  },
+  "creator_pool": [
+    "young_woman_casual",
+    "young_woman_polished",
+    "young_man_casual",
+    "woman_30s_editorial",
+    "hands_only"
+  ],
+  "setting_pool": [
+    "bright_bathroom",
+    "bedroom_vanity",
+    "sunlit_kitchen",
+    "studio_seamless",
+    "cafe_window"
+  ],
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

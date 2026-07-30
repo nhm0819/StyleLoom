@@ -1,0 +1,67 @@
+{
+  "style_id": "reference2",
+  "hook_text": "이 피부,\n미스트 한 번 뿐",
+  "hook_archetype": "reversal",
+  "shots": [
+    {
+      "index": 0,
+      "role": "hook",
+      "duration_sec": 3.0,
+      "shot_size": "CU",
+      "camera_move": "mostly static handheld",
+      "action": "광채 나는 피부 클로즈업 위로 시트러스 미스트 병이 등장, 손이 병을 살짝 흔든다",
+      "caption": "이 피부,\n미스트 한 번 뿐",
+      "scene_prompt": "광채 나는 피부 클로즈업 위로 시트러스 미스트 병이 등장, 손이 병을 살짝 흔든다. CU shot, mostly static handheld. a Korean man in his mid-20s, clear skin, short tidy dark hair, plain grey crewneck sweatshirt, relaxed friendly expression, in a bright modern bathroom vanity, white tile, large mirror, soft daylight from a frosted window, warm soft beauty grade. Opening shot.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures",
+      "continuation_prompt": "광채 나는 피부 클로즈업 위로 시트러스 미스트 병이 등장, 손이 병을 살짝 흔든다. CU shot, mostly static handheld. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 1,
+      "role": "context",
+      "duration_sec": 2.0,
+      "shot_size": "WS",
+      "camera_move": "slight natural sway",
+      "action": "사무실 책상에서 화면을 보는 여성, 살짝 푸석해진 피부 클로즈업",
+      "caption": "오후만 되면 푸석해지는 피부",
+      "scene_prompt": "사무실 책상에서 화면을 보는 여성, 살짝 푸석해진 피부 클로즈업. WS shot, slight natural sway. a Korean man in his mid-20s, clear skin, short tidy dark hair, plain grey crewneck sweatshirt, relaxed friendly expression, in a bright modern bathroom vanity, white tile, large mirror, soft daylight from a frosted window, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "사무실 책상에서 화면을 보는 여성, 살짝 푸석해진 피부 클로즈업. WS shot, slight natural sway. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 2,
+      "role": "turn",
+      "duration_sec": 3.0,
+      "shot_size": "CU",
+      "camera_move": "hand-to-camera product motion",
+      "action": "시트러스 미스트를 얼굴에 뿌리는 순간, 물방울이 퍼지는 슬로우모션",
+      "caption": "상큼한 한 번의 리프레시",
+      "scene_prompt": "시트러스 미스트를 얼굴에 뿌리는 순간, 물방울이 퍼지는 슬로우모션. CU shot, hand-to-camera product motion. a Korean man in his mid-20s, clear skin, short tidy dark hair, plain grey crewneck sweatshirt, relaxed friendly expression, in a bright modern bathroom vanity, white tile, large mirror, soft daylight from a frosted window, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "시트러스 미스트를 얼굴에 뿌리는 순간, 물방울이 퍼지는 슬로우모션. CU shot, hand-to-camera product motion. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 3,
+      "role": "payoff",
+      "duration_sec": 2.0,
+      "shot_size": "CU",
+      "camera_move": "mostly static handheld",
+      "action": "메이크업 위로 스며드는 미스트, 환하게 빛나는 피부 클로즈업",
+      "caption": "촉촉하고 산뜻한 피부 완성",
+      "scene_prompt": "메이크업 위로 스며드는 미스트, 환하게 빛나는 피부 클로즈업. CU shot, mostly static handheld. a Korean man in his mid-20s, clear skin, short tidy dark hair, plain grey crewneck sweatshirt, relaxed friendly expression, in a bright modern bathroom vanity, white tile, large mirror, soft daylight from a frosted window, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "메이크업 위로 스며드는 미스트, 환하게 빛나는 피부 클로즈업. CU shot, mostly static handheld. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 4,
+      "role": "cta",
+      "duration_sec": 2.0,
+      "shot_size": "MS",
+      "camera_move": "slight natural sway",
+      "action": "미스트를 들고 밝게 웃는 여성, 제품과 브랜드 로고 클로즈업",
+      "caption": "지금 상큼함 충전하기",
+      "scene_prompt": "미스트를 들고 밝게 웃는 여성, 제품과 브랜드 로고 클로즈업. MS shot, slight natural sway. a Korean man in his mid-20s, clear skin, short tidy dark hair, plain grey crewneck sweatshirt, relaxed friendly expression, in a bright modern bathroom vanity, white tile, large mirror, soft daylight from a frosted window, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "미스트를 들고 밝게 웃는 여성, 제품과 브랜드 로고 클로즈업. MS shot, slight natural sway. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    }
+  ]
+}

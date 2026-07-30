@@ -1,0 +1,36 @@
+{
+  "run_id": "run_20260730T151129_7685e6",
+  "style_id": "reference2",
+  "status": "done",
+  "stage": "done",
+  "created_at": "2026-07-30T15:11:29+00:00",
+  "updated_at": "2026-07-30T15:15:12+00:00",
+  "error": null,
+  "artifacts": {
+    "style": "data\\runs\\run_20260730T151129_7685e6\\style_used.json",
+    "brief": "data\\runs\\run_20260730T151129_7685e6\\brief.json",
+    "casting": "data\\runs\\run_20260730T151129_7685e6\\casting.json",
+    "outline": "data\\runs\\run_20260730T151129_7685e6\\outline.json",
+    "hook": "data\\runs\\run_20260730T151129_7685e6\\hook.json",
+    "storyboard": "data\\runs\\run_20260730T151129_7685e6\\storyboard.json",
+    "keyframe": "data\\runs\\run_20260730T151129_7685e6\\keyframe.json",
+    "render": "data\\runs\\run_20260730T151129_7685e6\\render.json",
+    "assemble": "data\\runs\\run_20260730T151129_7685e6\\assemble.json",
+    "qc": "data\\runs\\run_20260730T151129_7685e6\\qc_report.json",
+    "final_video": "data\\runs\\run_20260730T151129_7685e6\\final.mp4"
+  },
+  "hook_text": "남자 피부엔\n미스트 필요없다는 거\n완전히 틀렸어요",
+  "hook_archetype": "contradiction",
+  "qc_score": 0.857,
+  "plan_steps": [
+    "ingest",
+    "casting",
+    "outline",
+    "hook",
+    "storyboard",
+    "keyframe",
+    "render",
+    "assemble",
+    "qc"
+  ]
+}

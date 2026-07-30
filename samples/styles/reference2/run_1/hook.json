@@ -1,0 +1,58 @@
+{
+  "archetype_pool": [
+    "question",
+    "reversal",
+    "shock_number",
+    "empathy",
+    "visual_impact",
+    "contradiction"
+  ],
+  "archetype_sampled": "reversal",
+  "candidates": [
+    {
+      "archetype": "reversal",
+      "text": "퇴근길 피부가\n이렇다고요?",
+      "visual": "저녁 지하철 유리창에 비친 환하게 빛나는 피부 클로즈업, 놀란 표정으로 얼굴 만지는 여성",
+      "score": 0.845,
+      "rationale": "하루가 끝난 결과(빛나는 피부)를 먼저 보여줘 그 비결이 궁금해지게 만들고, 본문의 미스트 사용 과정으로 이어진다."
+    },
+    {
+      "archetype": "reversal",
+      "text": "이 피부,\n미스트 한 번 뿐",
+      "visual": "광채 나는 피부 클로즈업 위로 시트러스 미스트 병이 등장, 손이 병을 살짝 흔든다",
+      "score": 0.854,
+      "rationale": "결과부터 제시한 뒤 원인이 단 한 번의 미스트임을 밝혀 본문의 turn·payoff와 정확히 맞물린다."
+    },
+    {
+      "archetype": "reversal",
+      "text": "8시간 후에도\n촉촉한 피부",
+      "visual": "시계 자막이 8시간 경과를 보여주고, 여전히 촉촉하게 빛나는 피부 클로즈업",
+      "score": 0.81,
+      "rationale": "시간이 흐른 뒤의 상태를 먼저 제시해 지속력을 강조하며, 이는 하루 종일 촉촉함이라는 핵심 메시지와 일치한다."
+    },
+    {
+      "archetype": "reversal",
+      "text": "결론: 하루 종일\n산뜻했어요",
+      "visual": "환하게 빛나는 피부 클로즈업 위에 '결론' 자막, 이어서 시트러스 미스트 등장",
+      "score": 0.796,
+      "rationale": "결론을 바로 던지는 전형적 리버설 구조로, 본문에서 그 결론에 이르는 과정을 자연스럽게 궁금하게 만든다."
+    },
+    {
+      "archetype": "reversal",
+      "text": "이 광채,\n비결은 한 번의 칙",
+      "visual": "빛나는 피부 클로즈업 후 미스트 분사 슬로우모션, 물방울이 퍼지는 장면",
+      "score": 0.885,
+      "rationale": "감탄스러운 결과를 먼저 보여주고 그 원인을 짧고 감각적으로 예고해, 본문의 turn(분사 장면)과 정확히 연결된다."
+    }
+  ],
+  "selected": {
+    "archetype": "reversal",
+    "text": "이 피부,\n미스트 한 번 뿐",
+    "visual": "광채 나는 피부 클로즈업 위로 시트러스 미스트 병이 등장, 손이 병을 살짝 흔든다",
+    "score": 0.854,
+    "rationale": "결과부터 제시한 뒤 원인이 단 한 번의 미스트임을 밝혀 본문의 turn·payoff와 정확히 맞물린다."
+  },
+  "selection_method": "top_k_softmax(k=3, T=0.8)",
+  "temperature": 0.9,
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

@@ -1,0 +1,89 @@
+{
+  "style_id": "reference1",
+  "created_at": "2026-07-30T14:42:03+00:00",
+  "source_refs": [
+    "reference1.mp4"
+  ],
+  "total_duration": 10.7,
+  "beat_pattern": [
+    "hook",
+    "context",
+    "turn",
+    "payoff",
+    "cta"
+  ],
+  "pacing": {
+    "avg_shot_sec": 0.764,
+    "shot_count": 14,
+    "cut_style": "Rapid montage of extreme macro product shots intercut with quick face/application close-ups, hard cuts on action with no transitions, front-loaded with several cuts in the first seconds to hook before settling into a demo rhythm",
+    "cut_times": [
+      0.533,
+      0.867,
+      1.267,
+      1.733,
+      2.067,
+      3.667,
+      4.133,
+      4.6,
+      4.933,
+      5.4,
+      6.667,
+      8.0,
+      9.0
+    ]
+  },
+  "camera": {
+    "shot_size_dist": {
+      "CU": 0.5,
+      "MS": 0.35,
+      "WS": 0.15
+    },
+    "moves": [
+      "handheld micro-shake on close-ups",
+      "slow push-in on jelly texture",
+      "whip-tilt from product to face",
+      "static hold during spray/application beat"
+    ]
+  },
+  "look": {
+    "grade": "Warm, punchy beauty-vlog color grade with saturated reds and skin tones pushed slightly orange, deep contrast in the shadows of the product jar, whites clipped bright on highlights and mist droplets",
+    "saturation": 0.343,
+    "contrast": 0.442,
+    "warmth": 0.574,
+    "keywords": [
+      "jelly serum",
+      "collagen mist",
+      "glass skin",
+      "macro texture",
+      "TikTok skincare",
+      "glow reveal",
+      "before-and-after",
+      "UGC beauty ad"
+    ],
+    "detail": {
+      "subject": "Extreme close-up framing alternating between a wobbling red-pink jelly serum in a glass jar and a person's face/hand applying or spraying product, cropped tight so skin, mouth, fingers, or product fill most of the frame",
+      "lighting": "Soft diffuse daylight coming from a window or front-left, mostly shadowless and even, with occasional specular hot spots glinting off the wet jelly and glass surfaces",
+      "texture": "Glossy, wobbling, semi-translucent jelly with visible air bubbles and light refraction, wet sheen on lips and fingertips, smooth dewy skin, slight video compression softness on darker areas",
+      "palette": "Saturated cherry-red and hot-pink jelly tones against warm brown and tan skin, soft white and cream backgrounds, pale pink bottle accents",
+      "lens": "Shallow depth of field macro look with soft-focus edges, slight handheld phone-camera distortion typical of front-facing selfie video, close focal distance exaggerating texture",
+      "motion_feel": "Cutting driven by product reveal beats and rapid attention-grabbing hook cuts at the start, then settles into short lingering holds timed to voiceover phrases, with tiny handheld jitter and slow push-ins giving a live, tactile demo energy"
+    }
+  },
+  "caption": {
+    "pos": "center_lower",
+    "anim": "pop_in",
+    "max_chars_per_line": 14,
+    "color": "white",
+    "stroke_color": "black"
+  },
+  "audio": {
+    "bpm": 128.8,
+    "voice_tone": "Upbeat, confident, girl-next-door skincare influencer voiceover with casual conversational energy, slightly breathy excitement on payoff lines"
+  },
+  "hook_style": {
+    "window_sec": 3.0,
+    "shot_size": "CU",
+    "cut_count": 5
+  },
+  "notes": "Style mixes ultra-close macro food-like product texture shots (jelly, gloss, wet reflections) with intimate face-framed application shots; captions are burned-in white sans-serif text top and lower-third; branding watermark persistent bottom-left; overall aesthetic is glossy, saturated, appetite-appeal skincare content built for silent autoplay scrolling."
+}

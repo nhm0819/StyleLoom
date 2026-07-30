@@ -1,0 +1,27 @@
+{
+  "creator": {
+    "id": "hands_only",
+    "label": "손만 등장 (얼굴 노출 없음)",
+    "prompt": "close framing on a pair of well-groomed hands with short natural nails, no face visible, neutral long sleeves"
+  },
+  "setting": {
+    "id": "cafe_window",
+    "label": "카페 창가",
+    "prompt": "a cafe seat beside a large window, blurred street greenery outside, warm afternoon light, wooden table"
+  },
+  "creator_pool": [
+    "young_woman_casual",
+    "young_woman_polished",
+    "young_man_casual",
+    "woman_30s_editorial",
+    "hands_only"
+  ],
+  "setting_pool": [
+    "bright_bathroom",
+    "bedroom_vanity",
+    "sunlit_kitchen",
+    "studio_seamless",
+    "cafe_window"
+  ],
+  "entropy_source": "secrets.SystemRandom (OS entropy, unseeded)"
+}

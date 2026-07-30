@@ -1,0 +1,67 @@
+{
+  "style_id": "reference2",
+  "hook_text": "그 촉촉함,\n하루 종일\n갈 수 있을까요?",
+  "hook_archetype": "question",
+  "shots": [
+    {
+      "index": 0,
+      "role": "hook",
+      "duration_sec": 3.0,
+      "shot_size": "CU",
+      "camera_move": "mostly static handheld",
+      "action": "여성이 얼굴에 미스트를 뿌리는 클로즈업, 물방울이 피부에 맺히는 장면, 따뜻한 조명",
+      "caption": "그 촉촉함,\n하루 종일\n갈 수 있을까요?",
+      "scene_prompt": "여성이 얼굴에 미스트를 뿌리는 클로즈업, 물방울이 피부에 맺히는 장면, 따뜻한 조명. CU shot, mostly static handheld. close framing on a pair of well-groomed hands with short natural nails, no face visible, neutral long sleeves, in a cafe seat beside a large window, blurred street greenery outside, warm afternoon light, wooden table, warm soft beauty grade. Opening shot.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures",
+      "continuation_prompt": "여성이 얼굴에 미스트를 뿌리는 클로즈업, 물방울이 피부에 맺히는 장면, 따뜻한 조명. CU shot, mostly static handheld. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 1,
+      "role": "context",
+      "duration_sec": 2.0,
+      "shot_size": "MS",
+      "camera_move": "slight natural sway",
+      "action": "화장 후 몇 시간 지난 얼굴, 건조하고 칙칙해 보이는 피부를 거울로 비추는 20대 흑인 여성",
+      "caption": "화장 몇 시간 뒤, 피부가 건조해요",
+      "scene_prompt": "화장 후 몇 시간 지난 얼굴, 건조하고 칙칙해 보이는 피부를 거울로 비추는 20대 흑인 여성. MS shot, slight natural sway. close framing on a pair of well-groomed hands with short natural nails, no face visible, neutral long sleeves, in a cafe seat beside a large window, blurred street greenery outside, warm afternoon light, wooden table, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "화장 후 몇 시간 지난 얼굴, 건조하고 칙칙해 보이는 피부를 거울로 비추는 20대 흑인 여성. MS shot, slight natural sway. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 2,
+      "role": "turn",
+      "duration_sec": 3.0,
+      "shot_size": "CU",
+      "camera_move": "hand-to-camera product motion",
+      "action": "히알루론산, 나이아신아마이드 성분 미스트를 얼굴에 뿌리는 장면, 제품 라벨 클로즈업",
+      "caption": "성분 좋은 미스트 하나면 끝",
+      "scene_prompt": "히알루론산, 나이아신아마이드 성분 미스트를 얼굴에 뿌리는 장면, 제품 라벨 클로즈업. CU shot, hand-to-camera product motion. close framing on a pair of well-groomed hands with short natural nails, no face visible, neutral long sleeves, in a cafe seat beside a large window, blurred street greenery outside, warm afternoon light, wooden table, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "히알루론산, 나이아신아마이드 성분 미스트를 얼굴에 뿌리는 장면, 제품 라벨 클로즈업. CU shot, hand-to-camera product motion. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 3,
+      "role": "payoff",
+      "duration_sec": 2.0,
+      "shot_size": "WS",
+      "camera_move": "mostly static handheld",
+      "action": "미스트 사용 후 톤이 균일해지고 촉촉해진 피부, 메이크업이 선명하게 유지되는 얼굴 클로즈업",
+      "caption": "촉촉함과 톤, 하루 종일 유지",
+      "scene_prompt": "미스트 사용 후 톤이 균일해지고 촉촉해진 피부, 메이크업이 선명하게 유지되는 얼굴 클로즈업. WS shot, mostly static handheld. close framing on a pair of well-groomed hands with short natural nails, no face visible, neutral long sleeves, in a cafe seat beside a large window, blurred street greenery outside, warm afternoon light, wooden table, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "미스트 사용 후 톤이 균일해지고 촉촉해진 피부, 메이크업이 선명하게 유지되는 얼굴 클로즈업. WS shot, mostly static handheld. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 4,
+      "role": "cta",
+      "duration_sec": 2.0,
+      "shot_size": "MS",
+      "camera_move": "slight natural sway",
+      "action": "가방에서 미스트를 꺼내 외출 중 다시 뿌리는 여성, 밝게 웃는 얼굴로 마무리",
+      "caption": "가방 속 필수템, 지금 시작해요",
+      "scene_prompt": "가방에서 미스트를 꺼내 외출 중 다시 뿌리는 여성, 밝게 웃는 얼굴로 마무리. MS shot, slight natural sway. close framing on a pair of well-groomed hands with short natural nails, no face visible, neutral long sleeves, in a cafe seat beside a large window, blurred street greenery outside, warm afternoon light, wooden table, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "가방에서 미스트를 꺼내 외출 중 다시 뿌리는 여성, 밝게 웃는 얼굴로 마무리. MS shot, slight natural sway. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    }
+  ]
+}

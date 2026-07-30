@@ -1,0 +1,67 @@
+{
+  "style_id": "reference2",
+  "hook_text": "남자 피부엔\n미스트 필요없다는 거\n완전히 틀렸어요",
+  "hook_archetype": "contradiction",
+  "shots": [
+    {
+      "index": 0,
+      "role": "hook",
+      "duration_sec": 3.0,
+      "shot_size": "CU",
+      "camera_move": "mostly static handheld",
+      "action": "당기는 볼을 손으로 지그시 누르며 미간을 좁히는 남성 얼굴 클로즈업, 정적인 핸드헬드",
+      "caption": "남자 피부엔\n미스트 필요없다는 거\n완전히 틀렸어요",
+      "scene_prompt": "당기는 볼을 손으로 지그시 누르며 미간을 좁히는 남성 얼굴 클로즈업, 정적인 핸드헬드. CU shot, mostly static handheld. a Korean woman in her mid-20s, natural bare-faced makeup, soft shoulder-length hair, oversized cream cotton sweatshirt, warm and approachable expression, in a seamless studio backdrop in soft pastel, even diffused lighting, warm soft beauty grade. Opening shot.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures",
+      "continuation_prompt": "당기는 볼을 손으로 지그시 누르며 미간을 좁히는 남성 얼굴 클로즈업, 정적인 핸드헬드. CU shot, mostly static handheld. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 1,
+      "role": "context",
+      "duration_sec": 2.0,
+      "shot_size": "CU",
+      "camera_move": "slight natural sway",
+      "action": "사무실 책상 앞 20대 남성이 번들거리는 이마와 당기는 볼을 손으로 만지며 찡그린다",
+      "caption": "유분+건조, 같이 오는 피부고민",
+      "scene_prompt": "사무실 책상 앞 20대 남성이 번들거리는 이마와 당기는 볼을 손으로 만지며 찡그린다. CU shot, slight natural sway. a Korean woman in her mid-20s, natural bare-faced makeup, soft shoulder-length hair, oversized cream cotton sweatshirt, warm and approachable expression, in a seamless studio backdrop in soft pastel, even diffused lighting, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "사무실 책상 앞 20대 남성이 번들거리는 이마와 당기는 볼을 손으로 만지며 찡그린다. CU shot, slight natural sway. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 2,
+      "role": "turn",
+      "duration_sec": 3.0,
+      "shot_size": "WS",
+      "camera_move": "hand-to-camera product motion",
+      "action": "남성이 가방에서 미니 미스트 병을 꺼내 얼굴에 가볍게 스프레이한다",
+      "caption": "뿌리기만 하면 끝",
+      "scene_prompt": "남성이 가방에서 미니 미스트 병을 꺼내 얼굴에 가볍게 스프레이한다. WS shot, hand-to-camera product motion. a Korean woman in her mid-20s, natural bare-faced makeup, soft shoulder-length hair, oversized cream cotton sweatshirt, warm and approachable expression, in a seamless studio backdrop in soft pastel, even diffused lighting, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "남성이 가방에서 미니 미스트 병을 꺼내 얼굴에 가볍게 스프레이한다. WS shot, hand-to-camera product motion. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 3,
+      "role": "payoff",
+      "duration_sec": 2.0,
+      "shot_size": "CU",
+      "camera_move": "mostly static handheld",
+      "action": "촉촉하고 산뜻해진 피부로 미소짓는 남성, 얼굴 주변에 은은한 향기 입자가 퍼지는 클로즈업",
+      "caption": "산뜻함과 향, 동시에 해결",
+      "scene_prompt": "촉촉하고 산뜻해진 피부로 미소짓는 남성, 얼굴 주변에 은은한 향기 입자가 퍼지는 클로즈업. CU shot, mostly static handheld. a Korean woman in her mid-20s, natural bare-faced makeup, soft shoulder-length hair, oversized cream cotton sweatshirt, warm and approachable expression, in a seamless studio backdrop in soft pastel, even diffused lighting, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "촉촉하고 산뜻해진 피부로 미소짓는 남성, 얼굴 주변에 은은한 향기 입자가 퍼지는 클로즈업. CU shot, mostly static handheld. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    },
+    {
+      "index": 4,
+      "role": "cta",
+      "duration_sec": 2.0,
+      "shot_size": "MS",
+      "camera_move": "slight natural sway",
+      "action": "진정·수분·유분케어 미스트 3종이 나란히 놓이고 손이 하나를 집어든다",
+      "caption": "내 피부에 맞는 미스트 찾기",
+      "scene_prompt": "진정·수분·유분케어 미스트 3종이 나란히 놓이고 손이 하나를 집어든다. MS shot, slight natural sway. a Korean woman in her mid-20s, natural bare-faced makeup, soft shoulder-length hair, oversized cream cotton sweatshirt, warm and approachable expression, in a seamless studio backdrop in soft pastel, even diffused lighting, warm soft beauty grade.",
+      "motion_prompt": "static handheld selfie cut on product reveals and small hand gestures. No cut inside the shot.",
+      "continuation_prompt": "진정·수분·유분케어 미스트 3종이 나란히 놓이고 손이 하나를 집어든다. MS shot, slight natural sway. Same subject and location. warm soft beauty grade, low-mid contrast, peachy skin tones colour grade."
+    }
+  ]
+}

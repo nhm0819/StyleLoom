@@ -1,0 +1,36 @@
+{
+  "run_id": "run_20260730T151146_cbeb95",
+  "style_id": "reference2",
+  "status": "done",
+  "stage": "done",
+  "created_at": "2026-07-30T15:11:46+00:00",
+  "updated_at": "2026-07-30T15:15:39+00:00",
+  "error": null,
+  "artifacts": {
+    "style": "data\\runs\\run_20260730T151146_cbeb95\\style_used.json",
+    "brief": "data\\runs\\run_20260730T151146_cbeb95\\brief.json",
+    "casting": "data\\runs\\run_20260730T151146_cbeb95\\casting.json",
+    "outline": "data\\runs\\run_20260730T151146_cbeb95\\outline.json",
+    "hook": "data\\runs\\run_20260730T151146_cbeb95\\hook.json",
+    "storyboard": "data\\runs\\run_20260730T151146_cbeb95\\storyboard.json",
+    "keyframe": "data\\runs\\run_20260730T151146_cbeb95\\keyframe.json",
+    "render": "data\\runs\\run_20260730T151146_cbeb95\\render.json",
+    "assemble": "data\\runs\\run_20260730T151146_cbeb95\\assemble.json",
+    "qc": "data\\runs\\run_20260730T151146_cbeb95\\qc_report.json",
+    "final_video": "data\\runs\\run_20260730T151146_cbeb95\\final.mp4"
+  },
+  "hook_text": "그 촉촉함,\n하루 종일\n갈 수 있을까요?",
+  "hook_archetype": "question",
+  "qc_score": 0.857,
+  "plan_steps": [
+    "ingest",
+    "casting",
+    "outline",
+    "hook",
+    "storyboard",
+    "keyframe",
+    "render",
+    "assemble",
+    "qc"
+  ]
+}

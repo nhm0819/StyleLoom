@@ -1,0 +1,36 @@
+{
+  "run_id": "run_20260730T151053_f1e289",
+  "style_id": "reference2",
+  "status": "done",
+  "stage": "done",
+  "created_at": "2026-07-30T15:10:53+00:00",
+  "updated_at": "2026-07-30T15:14:30+00:00",
+  "error": null,
+  "artifacts": {
+    "style": "data\\runs\\run_20260730T151053_f1e289\\style_used.json",
+    "brief": "data\\runs\\run_20260730T151053_f1e289\\brief.json",
+    "casting": "data\\runs\\run_20260730T151053_f1e289\\casting.json",
+    "outline": "data\\runs\\run_20260730T151053_f1e289\\outline.json",
+    "hook": "data\\runs\\run_20260730T151053_f1e289\\hook.json",
+    "storyboard": "data\\runs\\run_20260730T151053_f1e289\\storyboard.json",
+    "keyframe": "data\\runs\\run_20260730T151053_f1e289\\keyframe.json",
+    "render": "data\\runs\\run_20260730T151053_f1e289\\render.json",
+    "assemble": "data\\runs\\run_20260730T151053_f1e289\\assemble.json",
+    "qc": "data\\runs\\run_20260730T151053_f1e289\\qc_report.json",
+    "final_video": "data\\runs\\run_20260730T151053_f1e289\\final.mp4"
+  },
+  "hook_text": "이 피부,\n미스트 한 번 뿐",
+  "hook_archetype": "reversal",
+  "qc_score": 0.857,
+  "plan_steps": [
+    "ingest",
+    "casting",
+    "outline",
+    "hook",
+    "storyboard",
+    "keyframe",
+    "render",
+    "assemble",
+    "qc"
+  ]
+}

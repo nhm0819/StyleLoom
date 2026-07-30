@@ -1,0 +1,75 @@
+{
+  "style_id": "reference2",
+  "created_at": "2026-07-30T14:42:25+00:00",
+  "source_refs": [
+    "reference2.mp4"
+  ],
+  "total_duration": 12.13,
+  "beat_pattern": [
+    "hook",
+    "context",
+    "turn",
+    "payoff",
+    "cta"
+  ],
+  "pacing": {
+    "avg_shot_sec": 4.044,
+    "shot_count": 3,
+    "cut_style": "static talking-head style with infrequent hard cuts between close-up angles, front-loaded cut in first 3 seconds then long held shot",
+    "cut_times": [
+      3.933,
+      8.133
+    ]
+  },
+  "camera": {
+    "shot_size_dist": {
+      "CU": 0.5,
+      "MS": 0.35,
+      "WS": 0.15
+    },
+    "moves": [
+      "slight handheld sway",
+      "subject tilts head down to look at product",
+      "fingers manipulating product close to chest"
+    ]
+  },
+  "look": {
+    "grade": "clean bright beauty grade with warm skin tones, soft lifted shadows, gentle pink-orange color cast, low-to-mid contrast",
+    "saturation": 0.371,
+    "contrast": 0.379,
+    "warmth": 0.519,
+    "keywords": [
+      "GRWM",
+      "skincare routine",
+      "TikTok beauty",
+      "close-up selfie framing",
+      "natural glam",
+      "product demo"
+    ],
+    "detail": {
+      "subject": "young woman framed in tight chest-up selfie shot, head tilted slightly down, holding a pink/red product bottle in both hands near her chest",
+      "lighting": "soft diffused frontal light, likely from a window or ring light slightly above eye level, even and flattering with minimal shadow, neutral-to-warm color temperature",
+      "texture": "smooth dewy skin with subtle sheen on cheeks and lips, glossy lip product, matte soft-focus background wall, slight fabric texture on dark tank top strap",
+      "palette": "warm skin tones, soft pink blush and lip color, beige/cream wall background, muted neutral tones with a pop of red-pink from the product bottle",
+      "lens": "shallow depth of field with soft background blur, phone-front-camera focal length feel, slightly wide perspective typical of selfie framing",
+      "motion_feel": "minimal movement, cut driven by change in action beat (from looking at camera to handling product), gentle handheld micro-motion sustaining intimacy rather than energy"
+    }
+  },
+  "caption": {
+    "pos": "center_lower",
+    "anim": "pop_in",
+    "max_chars_per_line": 14,
+    "color": "white",
+    "stroke_color": "black"
+  },
+  "audio": {
+    "bpm": 114.3,
+    "voice_tone": "soft, intimate, conversational beauty-guru narration, likely instructional"
+  },
+  "hook_style": {
+    "window_sec": 3.0,
+    "shot_size": "CU",
+    "cut_count": 1
+  },
+  "notes": ""
+}
