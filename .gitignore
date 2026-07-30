@@ -18,3 +18,6 @@ data/uploads/*
 !data/runs/.gitkeep
 !data/styles/.gitkeep
 !data/uploads/.gitkeep
+
+.vscode
+.claude
