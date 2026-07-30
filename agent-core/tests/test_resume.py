@@ -182,17 +182,50 @@ def test_naming_a_stage_outside_the_recorded_plan_is_refused(ctx, style):
         resume_run(ctx, failed.run_id, from_stage="not_a_real_stage")
 
 
-def test_a_run_with_no_recorded_plan_cannot_be_resumed(ctx, style):
-    """Pre-resume runs, or ones that failed before plan validation ever recorded
-    anything, have nothing to reopen -- this is refused rather than guessing a
-    plan that might not match what actually ran."""
-    failed = run_once(ctx, style.style_id, RunInputs(text=INPUT))
+def test_a_run_with_no_recorded_plan_is_inferred_not_refused(ctx, style):
+    """Runs from before `plan_steps` existed still have every artifact on disk,
+    which is the whole premise of keeping them as readable files. Refusing them
+    over a missing bookkeeping field threw away a finished, already-billed
+    render."""
+    real = _break_stage("assemble", FileNotFoundError("x"))
+    try:
+        failed = run_once(ctx, style.style_id, RunInputs(text=INPUT))
+    finally:
+        _restore("assemble", real)
+
     record = ctx.runs.load(failed.run_id)
     record.plan_steps = []
     ctx.runs.save(record)
 
-    with pytest.raises(ToolError, match="cannot be resumed"):
-        resume_run(ctx, failed.run_id)
+    resumed = resume_run(ctx, failed.run_id)
+    assert resumed.status is RunStatus.DONE, resumed.error
+    # And the inferred plan is written back, so a later resume needs no inference.
+    assert ctx.runs.load(failed.run_id).plan_steps
+
+
+def test_inference_only_includes_optional_stages_that_left_a_file(ctx, style, settings, sink):
+    """An optional stage before the resume point is in the inferred plan only if
+    its artifact is on disk. Guessing it in would make `seed_from_disk` reach for
+    a file that was never written."""
+    from styleloom_core import build_context
+
+    no_keyframe = build_context(
+        settings.model_copy(update={"use_first_frame": False}), events=sink
+    )
+    real = _break_stage("assemble", FileNotFoundError("x"))
+    try:
+        failed = run_once(no_keyframe, style.style_id, RunInputs(text=INPUT))
+    finally:
+        _restore("assemble", real)
+    assert not (no_keyframe.runs.dir_for(failed.run_id) / "keyframe.json").exists()
+
+    record = no_keyframe.runs.load(failed.run_id)
+    record.plan_steps = []
+    no_keyframe.runs.save(record)
+
+    _, plan = resume_session(no_keyframe, failed.run_id)
+    assert "keyframe" not in plan.steps
+    assert resume_run(no_keyframe, failed.run_id).status is RunStatus.DONE
 
 
 def test_resuming_past_a_deleted_artifact_names_the_missing_file(ctx, style):

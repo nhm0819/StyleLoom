@@ -507,6 +507,12 @@ class KlingVideoProvider(BaseVideoProvider):
         resolution = (spec.get("resolution_by_mode") or {}).get(self.settings.kling_mode)
         if resolution:
             settings["resolution"] = resolution
+        # The spec file states the endpoint's default; the run's own setting wins
+        # wherever the endpoint has the field at all. Without this the setting was
+        # unread and STYLELOOM_AUDIO did nothing -- the yaml value was the only
+        # thing that ever reached the request.
+        if "audio" in settings:
+            settings["audio"] = self.settings.audio
         # Only where the endpoint has nothing to read it off. With a start frame the
         # ratio comes from the image, and stating it again can only disagree.
         if spec.get("sends_aspect_ratio", True):

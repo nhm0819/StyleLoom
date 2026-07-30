@@ -37,6 +37,8 @@ app.add_typer(style_cmd.app, name="style")
 app.add_typer(runs_cmd.app, name="runs")
 app.add_typer(hook_cmd.app, name="hook")
 # run / batch stay top level: they are the two verbs people actually type.
+app.add_typer(run_cmd.run_group, name="run")
+# `batch` stays a root command; only `run` needed to become a group.
 app.registered_commands += run_cmd.app.registered_commands
 app.registered_commands += export_cmd.app.registered_commands
 app.registered_commands += models_cmd.app.registered_commands

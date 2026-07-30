@@ -23,6 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LLM_PROVIDERS = ("auto", "mock", "anthropic")
 VIDEO_PROVIDERS = ("auto", "mock", "kling")
 KLING_MODES = ("std", "pro")
+AUDIO_MODES = ("native", "off")
 
 
 class Settings(BaseSettings):
@@ -87,7 +88,10 @@ class Settings(BaseSettings):
     # separate generations cannot hold on their own. Off falls back to text-to-video
     # and one fewer call per window, at the cost of identity drift between windows.
     use_first_frame: bool = True
-    
+
+    # native | off. Whether the render endpoint generates audio to match the
+    # visuals. Applied wherever the endpoint has the field, overriding the
+    # per-endpoint default in configs/kling_models.yaml.
     audio: str = "native"
 
     # Also a resolution choice: std renders 720p, pro 1080p. Must match the
@@ -221,6 +225,13 @@ class Settings(BaseSettings):
             raise ConfigError(
                 f"unknown kling_mode: {self.kling_mode!r}. "
                 f"Expected one of {KLING_MODES}."
+            )
+        # Same reasoning as kling_mode: `native` is billed differently from `off`,
+        # and an unrecognised value here would be dropped into the request and
+        # ignored, so the run would silently produce the other one.
+        if self.audio not in AUDIO_MODES:
+            raise ConfigError(
+                f"unknown audio: {self.audio!r}. Expected one of {AUDIO_MODES}."
             )
         if self.hook_candidate_count < 1:
             raise ConfigError("hook_candidate_count must be >= 1")

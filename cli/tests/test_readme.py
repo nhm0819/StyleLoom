@@ -44,6 +44,11 @@ def real_commands() -> set[str]:
 
     def walk(typer_app, prefix: str = "") -> None:
         for command in typer_app.registered_commands:
+            # Hidden commands are dispatch plumbing, not interface. `run start` is
+            # the body behind `styleloom run <style_id>`; documenting it under that
+            # name would describe a call form nobody is meant to type.
+            if command.hidden:
+                continue
             name = command.name or command.callback.__name__.replace("_", "-")
             found.add(f"{prefix}{name}")
         for group in typer_app.registered_groups:

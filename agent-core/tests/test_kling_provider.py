@@ -168,10 +168,23 @@ def test_duration_is_capped_at_the_endpoint_maximum():
         one_cut(make_provider(), "p", 99.0)
 
 
-def test_audio_is_off_by_default():
-    """Captions are burned in and the reference set has no dialogue, so audio is
-    a surcharge for something the output discards. `sound` was the legacy name."""
-    assert one_cut(make_provider())["settings"]["audio"] == "off"
+def test_the_audio_setting_reaches_the_request():
+    """`STYLELOOM_AUDIO` used to be unread: the spec file's value was the only thing
+    that ever reached the request, so changing the setting did nothing."""
+    assert one_cut(make_provider(audio="native"))["settings"]["audio"] == "native"
+    assert one_cut(make_provider(audio="off"))["settings"]["audio"] == "off"
+
+
+def test_the_setting_overrides_the_endpoint_default():
+    """The spec file states what the endpoint defaults to; the run decides."""
+    provider = make_provider(audio="off")
+    assert (provider.i2v.get("settings_defaults") or {}).get("audio") == "native"
+    assert one_cut(provider)["settings"]["audio"] == "off"
+
+
+def test_the_legacy_endpoint_keeps_its_own_audio_field_name():
+    """`sound`, not `audio` -- and it is a spec-file default, not driven by the
+    setting, because that field is not the same field."""
     assert one_cut(legacy_provider())["sound"] == "off"
 
 
@@ -474,10 +487,10 @@ def test_a_single_cut_v3_request_turns_multi_shot_off_explicitly(tmp_path):
     assert settings["multi_shot"] is False
 
 
-def test_v3_audio_is_off_and_no_negative_prompt_is_sent(tmp_path):
+def test_v3_uses_settings_audio_and_sends_no_negative_prompt(tmp_path):
     """`sound` and `negative_prompt` are legacy names. The audio switch is
     `settings.audio`; the negative field does not exist at all."""
-    payload = one_cut(make_provider(), "p", 3.0, _frame(tmp_path))
+    payload = one_cut(make_provider(audio="off"), "p", 3.0, _frame(tmp_path))
     assert payload["settings"]["audio"] == "off"
     assert "sound" not in payload["settings"]
     assert "negative_prompt" not in payload["settings"]

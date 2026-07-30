@@ -223,17 +223,24 @@ does not throw away what came before it. If `render` billed for six clips and
 those six clips do not need to be rendered again:
 
 ```bash
-styleloom runs resume <run_id>                        # from the stage it failed at
-styleloom runs resume <run_id> --from-stage assemble  # or a stage named explicitly
+styleloom run resume <run_id>                        # from the stage it failed at
+styleloom run resume <run_id> --from-stage assemble  # or a stage named explicitly
 ```
 
 The default is the stage `runs ls` reports the run as `FAILED at`. Naming a stage
 explicitly instead redoes it even if it technically succeeded — for a clip that
-rendered but turned out wrong, say — without re-running everything before it. The
-plan this reopens is whichever one the run was actually given, recorded in
+rendered but turned out wrong, say — without re-running everything before it.
+
+The plan this reopens is whichever one the run was actually given, recorded in
 `run.json` at the time; it does not recompute `default_plan()` off current
-settings, since `--no-qc` or the video provider can change between when a run
-fails and when someone comes back to fix it.
+settings, since `--no-qc` or the video provider can change between when a run fails
+and when someone comes back to fix it. Runs from before that field existed are
+resumed too, with the plan inferred from the artifacts on disk — an optional stage
+counts as having been in the original plan only if it left its file there.
+
+`run` is a command group for this, so `run resume` can sit next to the command that
+started the run. One consequence worth knowing: a style whose id is literally
+`resume` cannot be launched as `styleloom run resume`.
 
 ### 4. Prove the hook is not frozen
 
@@ -291,10 +298,10 @@ bundle/
 | `styleloom style set <id> <file>` | Replace it with a hand-edited copy (validated) |
 | `styleloom style history <id>` | Recent hook / creator / setting choices. `--kind` to filter |
 | `styleloom run <id>` | One input → one video. `--text`, `--file`, `--bgm`, `--persona`, `--lang`. File options resolve against `<data-dir>/uploads/` first, then as given |
+| `styleloom run resume <run_id>` | Continue a run from where it failed. `--from-stage` to name a step explicitly |
 | `styleloom batch <id>` | Several inputs through one system. Repeat `-t` / `-f`, or `--inputs-file` |
 | `styleloom runs ls` | Recent runs, status, hook, QC score. `--style` to filter |
 | `styleloom runs show <run_id>` | The run record |
-| `styleloom runs resume <run_id>` | Continue a run from where it failed. `--from-stage` to name a step explicitly |
 | `styleloom runs hook <run_id>` | The full hook decision trail for that run |
 | `styleloom hook preview <id>` | N hook generations from one input, no rendering |
 | `styleloom models` | Endpoint specs and per-video cost. `--style` for real numbers |
@@ -559,6 +566,7 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 | `STYLELOOM_KLING_T2I_MODEL` | `kling-v3` | builds the first frame. `POST /v1/images/generations`, where the model *is* a `model_name` in the body |
 | `STYLELOOM_KLING_I2V_MODEL` | `kling-3.0` | `POST /image-to-video/kling-3.0`. The production path: it animates the frame t2i just built |
 | `STYLELOOM_USE_FIRST_FRAME` | `true` | generate one anchor still per run and open every request on a frame derived from it. `false` drops the keyframe stage and falls back to text-to-video |
+| `STYLELOOM_AUDIO` | `native` | `native` \| `off`. Whether the endpoint generates audio to match the visuals. Overrides the per-endpoint default in `configs/kling_models.yaml` |
 | `STYLELOOM_KLING_MODE` | `std` | `std` \| `pro`. The quality tier. On the 3.0 endpoints there is no `mode` field, so it maps onto `settings.resolution`: std 720p, pro 1080p |
 | `STYLELOOM_KLING_BASE_URL` | `https://api-singapore.klingai.com` | International account system. `api-beijing.klingai.com` is a different account, not a region |
 | `STYLELOOM_KLING_TIMEOUT_SEC` | `900` | Covers queue time as well as inference |
@@ -800,7 +808,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-288 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+292 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting

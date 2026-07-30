@@ -19,9 +19,9 @@ from ..config import Settings
 from ..context import Context, new_run_id
 from ..errors import NotFoundError, ToolError
 from ..events import EventKind
-from ..planner import Plan, build_plan
-from ..schema import AssembleResult, RunInputs, RunRecord
-from ..session import RunSession
+from ..planner import OPTIONAL_STEPS, STANDARD_STEPS, Plan, build_plan
+from ..schema import AssembleResult, RunInputs, RunRecord, RunStatus
+from ..session import ARTIFACT_FILES, RunSession
 from ..tools import registry
 
 if TYPE_CHECKING:
@@ -179,6 +179,53 @@ def run_once(
     return execute(ctx, session, plan or default_plan(ctx))
 
 
+def _wrote_its_artifact(ctx: Context, run_id: str, step: str) -> bool:
+    """Whether a step left its output file in this run's directory."""
+    spec = registry.get(step)
+    filename = ARTIFACT_FILES.get(spec.writes or "")
+    if filename is None:
+        return False
+    return (ctx.runs.dir_for(run_id) / filename).exists()
+
+
+def infer_plan_steps(ctx: Context, run_id: str, stage: str) -> list[str]:
+    """Reconstruct a plan for a run whose record does not carry one.
+
+    Runs created before `plan_steps` was recorded still have everything that
+    matters on disk -- that is the whole premise of keeping each stage's output as
+    a readable file. Refusing to resume them because a bookkeeping field is absent
+    threw away a finished, already-billed render over metadata.
+
+    Only the optional steps are in question, since the rest of the pipeline is
+    fixed. They are decided from two different sources depending on which side of
+    the resume point they fall on, because only one of the two is knowable:
+
+      * Before the resume point, the disk is the evidence. `keyframe.json` present
+        means the stage ran and its output is there to seed; absent means it was
+        not in the original plan, and inventing it would try to load a file that
+        does not exist.
+      * At or after the resume point, nothing has run yet, so there is no evidence
+        to read and current settings are the only available answer.
+    """
+    steps: list[str] = []
+    past_resume_point = False
+    for name in STANDARD_STEPS:
+        if name == stage:
+            past_resume_point = True
+        if name in OPTIONAL_STEPS:
+            keep = (
+                # `qc` is the only optional step after render, and nothing reads it,
+                # so it is safe to add back for the remainder of the run.
+                (name != "keyframe" or ctx.settings.use_first_frame)
+                if past_resume_point
+                else _wrote_its_artifact(ctx, run_id, name)
+            )
+            if not keep:
+                continue
+        steps.append(name)
+    return steps
+
+
 def resume_session(
     ctx: Context, run_id: str, from_stage: str | None = None
 ) -> tuple[RunSession, Plan]:
@@ -196,16 +243,18 @@ def resume_session(
     plan, not just any tool name: resuming re-enters that exact plan, not a new one.
     """
     record = ctx.runs.load(run_id)  # raises NotFoundError
-    if not record.plan_steps:
-        raise ToolError(
-            f"run {run_id!r} has no recorded plan, so it predates resume support "
-            "or never got past validation. It cannot be resumed -- start a new run."
-        )
     stage = from_stage or record.stage
-    if stage not in record.plan_steps:
+    inferred = not record.plan_steps
+    steps = list(record.plan_steps) or infer_plan_steps(ctx, run_id, stage)
+    if stage not in steps:
         raise ToolError(
-            f"{stage!r} is not a step in run {run_id!r}'s plan: "
-            f"{list(record.plan_steps)}"
+            f"{stage!r} is not a step in run {run_id!r}'s plan: {steps}. "
+            + (
+                "This run finished, so there is no failed stage to pick up from -- "
+                "name one with --from-stage to redo it."
+                if record.status is RunStatus.DONE
+                else "Name one of those with --from-stage."
+            )
         )
 
     raw_inputs = json.loads(
@@ -219,13 +268,28 @@ def resume_session(
     # the PRELOADED default, so it has to be seeded here regardless of from_stage.
     session.seed_from_disk("style")
 
-    resume_at = record.plan_steps.index(stage)
-    for name in record.plan_steps[:resume_at]:
+    if inferred:
+        # Said out loud: the run is being continued under a plan nobody recorded,
+        # so if the original had dropped a stage this could differ from it.
+        ctx.emit(
+            EventKind.WARNING,
+            run_id,
+            stage="resume",
+            message=(
+                f"this run recorded no plan, so one was inferred from its files: "
+                f"{steps}. Optional stages before {stage!r} were included only "
+                "where their artifact is on disk."
+            ),
+        )
+        session.mark(plan_steps=steps)
+
+    resume_at = steps.index(stage)
+    for name in steps[:resume_at]:
         spec = registry.get(name)
         if spec.writes:
             session.seed_from_disk(spec.writes)
 
-    remaining = tuple(record.plan_steps[resume_at:])
+    remaining = tuple(steps[resume_at:])
     plan = Plan(name=f"{record.style_id}_resume_from_{stage}", steps=remaining)
     return session, plan
 
