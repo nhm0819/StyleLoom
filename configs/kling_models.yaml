@@ -73,7 +73,7 @@ text_to_video:
       std: 720p
       pro: 1080p
     settings_defaults:
-      audio: "off"
+      audio: "native"
     # There is no negative_prompt field on 3.0; the prompt itself "can include
     # positive and negative descriptions". Appended to single-cut prompts only --
     # see negative_clause on the image_to_video entry for why not to multi-shot ones.
@@ -254,7 +254,7 @@ image_to_video:
       # `native` would generate audio to match the visuals. Captions are burned in
       # by ffmpeg and the reference set has no dialogue, so this is a surcharge for
       # something the output discards.
-      audio: "off"
+      audio: "native"
     # There is no negative_prompt field on this API. The prompt itself "can include
     # positive and negative descriptions", so the clause is appended to the prompt
     # text -- but on SINGLE-CUT requests only.

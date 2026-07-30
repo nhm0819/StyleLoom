@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     # separate generations cannot hold on their own. Off falls back to text-to-video
     # and one fewer call per window, at the cost of identity drift between windows.
     use_first_frame: bool = True
+    
+    audio: str = "native"
 
     # Also a resolution choice: std renders 720p, pro 1080p. Must match the
     # output size below or the result is upscaled; `doctor` flags a mismatch.
