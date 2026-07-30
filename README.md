@@ -962,11 +962,27 @@ Two alternatives, neither needed if the above works:
   check — not the endpoint's obedience to a shot list. This is the one risk the
   removal of the per-cut path took on, and `qc`'s `cut_timing_drift` is the
   instrument for it.
-- **A window still pays a floor, just once.** Per-cut durations are whole seconds
-  with a minimum of 1s, so a 0.76s cut is billed and delivered at 1s, and a whole
-  request cannot be shorter than 3s. `split_windows` merges a short trailing window
-  backwards to avoid buying that floor twice. Run `styleloom models` for the
-  arithmetic on your own style.
+- **The endpoint cannot cut faster than 1s, and short-form references do.** The
+  bundled reference cuts every 0.76s. That length cannot be requested, so the
+  storyboard plans on the endpoint's grid: every cut it asks for is a length the
+  endpoint will actually render, which is what makes requested = billed = delivered.
+  Before this it divided beats evenly, handed over 0.76s cuts, and the request
+  quantised silently — the delivered video ran ~40% longer than the storyboard and
+  nothing said so until QC on a paid run.
+
+  The pacing cost is real: 0.76s becomes 1s, 31% slower. `qc`'s `avg_shot_sec`
+  tolerance widens by exactly that forced gap and keeps its normal band on top, so a
+  style above the floor is measured as strictly as before and a run that drifts
+  further still fails. When the widening applies, the run warns that the check
+  passing does not mean the pacing was reproduced.
+
+  **Sub-second pacing is a known gap.** Recovering it means splitting the window clip
+  at the planned cut boundaries and trimming each piece back — one ffmpeg pass per
+  window, no extra generation cost. Not implemented.
+
+- **A request still pays a floor, just once.** A whole request cannot be shorter than
+  3s. `split_windows` merges a short trailing window backwards to avoid buying that
+  floor twice. Run `styleloom models` for the arithmetic on your own style.
 - **Shot-size distribution is not measured.** Extraction recovers pacing and grade
   from pixels; shot size falls back to the schema default and is meant to be
   corrected via `styleloom style set`. Measuring it needs subject detection, which is
