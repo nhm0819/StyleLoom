@@ -319,15 +319,51 @@ invocation.
 
 ```bash
 $ styleloom plan
-1. ingest      (- -> brief)
-2. casting     (style, brief -> casting)
-3. outline     (style, brief -> outline)
-4. hook        (style, brief, outline -> hook)
-5. storyboard  (style, brief, casting, outline, hook -> storyboard)
-6. render      (storyboard, casting -> render)
-7. assemble    (style, storyboard, render -> assemble)
-8. qc          (style, storyboard, render, assemble -> qc)
+plan: standard
+  1. ingest      (- -> brief)
+  2. casting     (style, brief -> casting)
+  3. outline     (style, brief, casting -> outline)
+  4. hook        (style, brief, outline, casting -> hook)
+  5. storyboard  (style, brief, casting, outline, hook -> storyboard)
+  6. keyframe    (style, brief, casting, storyboard -> keyframe)
+  7. render      (storyboard -> render)
+  8. assemble    (style, storyboard, render -> assemble)
+  9. qc          (style, storyboard, render, assemble -> qc)
 ```
+
+The order is data and is validated before anything runs: a step that reads an
+artifact nothing earlier writes fails at plan time, not halfway through rendering.
+
+### Flow
+
+A rendered version of this is in [docs/WORKFLOW.mermaid](docs/WORKFLOW.mermaid),
+which also covers style extraction, prompt assembly and resume.
+
+```mermaid
+flowchart LR
+  REF["reference video"] --> EX["style extract<br/>pixels → numbers<br/>LLM → labels"] --> STYLE[("style.json")]
+  IN["text / image / video"] --> ING["ingest"] --> CAST["casting"] --> OUT["outline"]
+  OUT --> HOOK["hook"] --> SB["storyboard"] --> KF["keyframe"] --> RD["render"]
+  RD --> AS["assemble"] --> QC["qc"] --> FINAL["final.mp4"]
+  STYLE -.->|"every stage reads it"| SB
+  KF -->|"anchor + lead frames<br/>2500-char prompts"| RD
+  RD -->|"one generation per window<br/>≤6 cuts, ≤15s, 512 chars/shot"| AS
+```
+
+Four things decide the shape of this pipeline:
+
+1. **Measure what is measurable, name what is not.** Pacing and colour come from
+   pixels so QC can re-measure them with the same instrument; the LLM only names
+   the grade, the camera vocabulary and the look.
+2. **The prompt budgets are asymmetric.** Image generation allows 2500 characters
+   per prompt, image-to-video allows 512 per shot and cannot be raised. So the look
+   is established in the keyframe and the video inherits it from that frame.
+3. **One generation per window, not per cut.** Cuts are packed into requests of up
+   to 6 shots and 15s, so the endpoint's duration floor is paid once per request
+   rather than once per cut. The cuts then live inside the model's output, which is
+   why `qc` measures `cut_timing_drift` rather than assuming it is zero.
+4. **Every stage writes a file before the next one runs.** That is what makes a
+   failed run resumable and a finished one auditable.
 
 Reference videos go through a separate entry point (`style extract`) because
 `style.json` is a reusable asset, not a per-run artifact.
@@ -504,9 +540,15 @@ event sink — which is what makes them additive rather than a rewrite.
   the API/worker extension path
 - [docs/TOOL_RATIONALE.md](docs/TOOL_RATIONALE.md) — what each tool is and why,
   including the alternatives that were rejected and the model cost comparison
-- [docs/RETROSPECTIVE.md](docs/RETROSPECTIVE.md) — assumptions, where this got
-  stuck, what was measured versus what remains unverified, and how to make the
-  system judge its own output
+- [docs/RETROSPECTIVE.md](docs/RETROSPECTIVE.md) — the long-form version of the
+  retrospective, kept for the reasoning it records
+
+Three documents answer the submission questions directly:
+
+- [README.md](README.md) — how to run it, and the flow above
+- [analysis.md](analysis.md) — every tool, and one or two lines on why it was picked
+- [retro.md](retro.md) — assumptions, where this got stuck, what was measured
+  versus what remains unverified, and how the system could judge its own output
 
 ---
 
@@ -844,7 +886,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-324 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+328 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting

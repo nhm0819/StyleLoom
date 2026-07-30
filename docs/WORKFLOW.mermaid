@@ -1,15 +1,16 @@
 flowchart TB
 
 %% ===================== ① 스타일 추출 =====================
+%% 레퍼런스당 1회. 런과 분리된 엔트리포인트이고 결과물은 재사용 가능한 자산이다.
 subgraph EXTRACT["① 스타일 추출 · styleloom style extract · 레퍼런스당 1회"]
   direction LR
   REF["레퍼런스 영상<br/>1~N편"]
   PROBE["media.probe_video<br/>디코드 1패스"]
-  KF["키프레임 최대 6장"]
-  METRIC["컷 타임 · 색 통계<br/>saturation·contrast·warmth"]
-  VISION["analyze.extract_style<br/>LLM vision → 언어 라벨"]
-  DROP(["폐기 · 생성 입력으로 가지 않음"])
-  STYLE[("style.json")]
+  KF["샘플 키프레임 최대 6장"]
+  METRIC["컷 타임 · 색 통계<br/>saturation·contrast·warmth<br/>avg_shot_sec · cuts_in_first_3s"]
+  VISION["analyze.extract_style<br/>LLM vision → 언어 라벨만<br/>숫자는 만들지 않도록 지시"]
+  DROP(["샘플 프레임 폐기<br/>생성 입력으로 가지 않음"])
+  STYLE[("style.json<br/>pacing·camera·look.detail<br/>caption·audio·hook_style")]
 
   REF --> PROBE
   PROBE --> KF
@@ -24,27 +25,29 @@ end
 %% 실선 = 플랜의 실행 순서, 점선 = 툴이 선언한 reads
 subgraph RUN["② 런 파이프라인 · styleloom run · 입력 1개 → 영상 1편"]
   direction TB
-  INPUT["RunInputs<br/>text / image / video"]
+  INPUT["RunInputs<br/>text / image / video (+bgm)"]
 
-  T1["ingest"]
-  T2["casting<br/>+ 크리에이터 초상 t2i"]
-  T3["outline"]
-  T4["hook<br/>후보 N개 → 점수 → 선택"]
-  T5["storyboard"]
-  T6["render"]
-  T7["assemble<br/>자막 번인 → concat"]
-  T8["qc<br/>결과물 재측정"]
+  T1["ingest<br/>입력 → Brief"]
+  T2["casting<br/>크리에이터·장소 추첨<br/>API 호출 없음"]
+  T3["outline<br/>본문 비트 + payoff<br/>글자수 예산을 프롬프트에 명시"]
+  T4["hook<br/>후보 N개 → 점수 → 확률 선택"]
+  T5["storyboard<br/>비트 → 컷 · 엔드포인트 격자"]
+  T6["keyframe<br/>앵커 1장 + 윈도우별 리드 1장"]
+  T7["render<br/>윈도우당 생성 1회"]
+  T8["assemble<br/>자막 번인 → concat"]
+  T9["qc<br/>결과물 재측정"]
 
   A1[("brief")]
   A2[("casting")]
-  A3[("outline<br/>본문 비트 + payoff")]
+  A3[("outline")]
   A4[("hook<br/>후보·점수·선택 근거")]
-  A5[("storyboard<br/>image_prompt·motion_prompt")]
-  A6[("render<br/>ClipSegment 목록")]
-  A7[("assemble<br/>final.mp4")]
-  A8[("qc_report.json")]
+  A5[("storyboard<br/>scene_prompt·motion_prompt")]
+  A6[("keyframe<br/>앵커·리드 프레임 경로")]
+  A7[("render<br/>ClipSegment 목록")]
+  A8[("assemble<br/>final.mp4")]
+  A9[("qc_report.json")]
 
-  INPUT --> T1 --> T2 --> T3 --> T4 --> T5 --> T6 --> T7 --> T8
+  INPUT --> T1 --> T2 --> T3 --> T4 --> T5 --> T6 --> T7 --> T8 --> T9
   T1 --> A1
   T2 --> A2
   T3 --> A3
@@ -53,54 +56,84 @@ subgraph RUN["② 런 파이프라인 · styleloom run · 입력 1개 → 영상
   T6 --> A6
   T7 --> A7
   T8 --> A8
+  T9 --> A9
 
   A1 -.-> T2
   A1 -.-> T3
+  A2 -.-> T3
   A1 -.-> T4
+  A2 -.-> T4
   A3 -.-> T4
   A1 -.-> T5
   A2 -.-> T5
   A3 -.-> T5
   A4 -.-> T5
-  A5 -.-> T6
   A2 -.-> T6
+  A5 -.-> T6
   A5 -.-> T7
   A6 -.-> T7
   A5 -.-> T8
-  A6 -.-> T8
   A7 -.-> T8
+  A5 -.-> T9
+  A7 -.-> T9
+  A8 -.-> T9
 end
 
-%% ===================== ③ render 내부 =====================
-subgraph RENDER["③ render 상세 · STYLELOOM_RENDER_MODE"]
+%% ===================== ③ 프롬프트 합성 =====================
+%% 두 엔드포인트의 글자수 상한이 5배 차이라 무엇을 어디에 넣을지가 결정된다.
+subgraph PROMPT["③ 프롬프트 합성 · 예산 비대칭이 배치를 결정"]
   direction TB
-  MODE{"렌더 모드"}
-  PS1["샷별 t2i 키프레임"]
-  PS2["샷별 i2v 애니메이트"]
-  PS3["ffmpeg trim<br/>하한 초과분 절삭"]
-  MS1["split_windows<br/>15초 AND 6샷 상한"]
-  MS2["윈도우 리드 t2i"]
-  MS3["animate_sequence<br/>multi_prompt · 정수초"]
+  LOOK["look.detail<br/>용도별로 분리된 묘사"]
+  IMGP["이미지 프롬프트 · 상한 2500자<br/>subject·lighting·texture<br/>palette·lens + Brief"]
+  VIDP["샷 프롬프트 · 상한 512자/샷<br/>인물·장소·grade<br/>+ motion_feel"]
+  NUM(["saturation·contrast 수치는<br/>프롬프트에 넣지 않음<br/>QC가 style.json에서 직접 읽음"])
 
-  MODE -->|"per_shot · 기본값 · 검증됨"| PS1 --> PS2 --> PS3
-  MODE -->|"multi_shot · 컷 1초 이상만"| MS1 --> MS2 --> MS3
+  LOOK -->|"이미지가 실행할 수 있는 것"| IMGP
+  LOOK -->|"영상만 표현할 수 있는 것"| VIDP
+  LOOK -.-> NUM
+  IMGP ==>|"룩은 프레임에 실려 i2v로 상속"| VIDP
+end
+
+%% ===================== ④ render 내부 =====================
+subgraph RENDER["④ render 상세 · 윈도우당 생성 1회"]
+  direction TB
+  W1["split_windows<br/>15초 AND 6샷 상한<br/>짧은 꼬리 윈도우는 앞으로 병합"]
+  W2["plan_shot_durations<br/>정수초 · 합계 = settings.duration"]
+  W3["generate_sequence<br/>세미콜론 샷 리스트<br/>shot n, m, words;"]
+  W4(["윈도우 실패 시<br/>그 안의 컷 전체 유실 · 기록"])
+
+  W1 --> W2 --> W3
+  W3 -.->|"예외"| W4
+end
+
+%% ===================== ⑤ 재개 =====================
+subgraph RESUME["⑤ 재개 · styleloom run resume"]
+  direction LR
+  R1["run.json 의 plan_steps<br/>없으면 디스크에서 추론"]
+  R2["실패 단계 이전 산출물<br/>seed_from_disk 로 복원"]
+  R3["실패 단계부터 재실행"]
+  R1 --> R2 --> R3
 end
 
 %% ===================== 외부 입력 · 연결 =====================
 HIST[("ChoiceHistory<br/>최근 선택 로그")]
 ARCH[("configs/archetypes.yaml<br/>훅 아키타입 풀")]
-OPT["BGM · persona_ref<br/>선택 입력"]
+SPEC[("configs/kling_models.yaml<br/>엔드포인트 스펙 · 제약")]
 QCNOTE(["QC는 report-only<br/>실패해도 DONE · 게이트 미구현"])
 
-STYLE ==>|"casting·outline·hook·storyboard<br/>assemble·qc 가 모두 읽음"| RUN
+STYLE ==>|"casting·outline·hook·storyboard<br/>keyframe·assemble·qc 가 모두 읽음"| RUN
 HIST <-.->|"recency penalty ↔ 선택 기록"| T2
 HIST <-.->|"recency penalty ↔ 선택 기록"| T4
 ARCH --> T4
-OPT --> T7
-T6 --> MODE
-PS3 -.-> A6
-MS3 -.-> A6
-A8 -.-> QCNOTE
+SPEC ==>|"글자수·샷수·길이 상한"| PROMPT
+SPEC ==>|"윈도우·격자 상한"| RENDER
+T5 -.-> LOOK
+T6 -.-> IMGP
+T7 -.-> VIDP
+T7 --> W1
+A9 -.-> QCNOTE
+A7 -.->|"중단 시"| RESUME
+R3 -.-> T8
 
 %% ===================== 스타일 =====================
 classDef artifact fill:#e8f0fe,stroke:#4a72c4,color:#1a2b4a
@@ -108,7 +141,7 @@ classDef tool fill:#fff5e6,stroke:#d99b3d,color:#4a3411
 classDef note fill:#fbeaea,stroke:#c25555,color:#4a1a1a
 classDef ext fill:#eef7ee,stroke:#5aa05a,color:#1a3d1a
 
-class A1,A2,A3,A4,A5,A6,A7,A8,STYLE,HIST,ARCH artifact
-class T1,T2,T3,T4,T5,T6,T7,T8,PROBE,VISION,PS1,PS2,PS3,MS1,MS2,MS3 tool
-class DROP,QCNOTE note
-class REF,INPUT,KF,METRIC,OPT ext
+class STYLE,A1,A2,A3,A4,A5,A6,A7,A8,A9,HIST,ARCH,SPEC artifact
+class T1,T2,T3,T4,T5,T6,T7,T8,T9,PROBE,VISION,W1,W2,W3,R1,R2,R3,IMGP,VIDP,LOOK tool
+class DROP,QCNOTE,NUM,W4 note
+class REF,INPUT,KF,METRIC ext

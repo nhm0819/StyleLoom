@@ -120,6 +120,27 @@ def test_linked_docs_exist(readme):
         assert (REPO_ROOT / relative).exists(), f"broken link: {relative}"
 
 
+def test_the_plan_block_lists_the_stages_in_order(readme):
+    """Order, not just membership.
+
+    The block went stale and the old check did not notice: it asserted each stage
+    name appeared *somewhere* in the README, so a plan block missing `keyframe`
+    entirely still passed because the word occurs elsewhere in the prose.
+    """
+    block = re.search(r"\$ styleloom plan\n(.*?)```", readme, re.S)
+    assert block, "the README should show the output of `styleloom plan`"
+    listed = re.findall(r"\d+\.\s+(\w+)", block.group(1))
+    assert listed == list(build_plan().steps)
+
+
+@pytest.mark.parametrize("path", ["analysis.md", "retro.md", "docs/WORKFLOW.mermaid"])
+def test_the_submission_documents_exist_and_are_linked(readme, path):
+    """The three deliverables alongside the README. Linked rather than orphaned, so
+    someone landing on the README can find them."""
+    assert (REPO_ROOT / path).exists(), f"missing document: {path}"
+    assert path in readme, f"{path} exists but the README does not link it"
+
+
 @pytest.mark.parametrize(
     "path",
     [
