@@ -90,7 +90,7 @@ class AnthropicLLM(BaseLLM):
                 json={
                     "model": self.model,
                     "max_tokens": 4000,
-                    "temperature": temperature,
+                    # "temperature": temperature,
                     "system": system
                     + "\n\nRespond with a single JSON object and nothing else.",
                     "messages": [{"role": "user", "content": content}],
