@@ -372,6 +372,10 @@ class RunRecord(BaseModel):
     hook_text: str | None = None
     hook_archetype: str | None = None
     qc_score: float | None = None
+    # The plan this run was actually given -- not `default_plan()` recomputed later,
+    # since settings (use_first_frame, --no-qc) can change between when a run failed
+    # and when someone resumes it. Empty means the run predates resume support.
+    plan_steps: list[str] = Field(default_factory=list)
 
     def touch(self, **kw: Any) -> RunRecord:
         for k, v in kw.items():

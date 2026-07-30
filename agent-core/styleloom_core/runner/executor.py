@@ -11,12 +11,13 @@ the core stays silent and each transport renders progress its own way.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..config import Settings
 from ..context import Context, new_run_id
-from ..errors import NotFoundError
+from ..errors import NotFoundError, ToolError
 from ..events import EventKind
 from ..planner import Plan, build_plan
 from ..schema import AssembleResult, RunInputs, RunRecord
@@ -113,6 +114,15 @@ def execute(ctx: Context, session: RunSession, plan: Plan) -> RunRecord:
         # about it -- so a caller that pre-seeded extra artifacts still gets a
         # correct check.
         plan.validate(frozenset(session.artifacts))
+        # Recorded once, on the run's first attempt, and never overwritten after --
+        # a resume calls `execute` again with a *shorter* plan (just what is left),
+        # and if this ran unconditionally every time, a second failure after a
+        # resume would leave plan_steps holding only the tail, silently forgetting
+        # that earlier stages like "render" were ever part of this run. That would
+        # make a later `--from-stage render` fail with "not a step in this run's
+        # plan" even though render.json is sitting right there on disk.
+        if not session.record.plan_steps:
+            session.mark(plan_steps=list(plan.steps))
 
         for stage in plan.steps:
             spec = registry.get(stage)
@@ -167,6 +177,68 @@ def run_once(
     """
     session = prepare_session(ctx, style_id, inputs, run_id=run_id)
     return execute(ctx, session, plan or default_plan(ctx))
+
+
+def resume_session(
+    ctx: Context, run_id: str, from_stage: str | None = None
+) -> tuple[RunSession, Plan]:
+    """Rebuild a session from a run's own artifacts, picking up where it left off.
+
+    Every stage writes its output as a plain JSON file for exactly this reason: a
+    render that finished several clips and then broke in assemble should not have
+    to render them again to try assemble a second time. This reopens what the
+    earlier stages wrote and hands back a plan trimmed to what is left.
+
+    `from_stage` defaults to the stage `runs ls` shows the run failed at. Naming it
+    explicitly instead re-does a stage that technically succeeded but produced
+    something wrong -- a corrupted clip in `shots/`, say -- without re-running
+    everything before it. Either way it must be a step in the run's own recorded
+    plan, not just any tool name: resuming re-enters that exact plan, not a new one.
+    """
+    record = ctx.runs.load(run_id)  # raises NotFoundError
+    if not record.plan_steps:
+        raise ToolError(
+            f"run {run_id!r} has no recorded plan, so it predates resume support "
+            "or never got past validation. It cannot be resumed -- start a new run."
+        )
+    stage = from_stage or record.stage
+    if stage not in record.plan_steps:
+        raise ToolError(
+            f"{stage!r} is not a step in run {run_id!r}'s plan: "
+            f"{list(record.plan_steps)}"
+        )
+
+    raw_inputs = json.loads(
+        (ctx.runs.dir_for(run_id) / "inputs.json").read_text(encoding="utf-8")
+    )
+    session = RunSession(
+        record=record, inputs=RunInputs.model_validate(raw_inputs), store=ctx.runs
+    )
+    # "style" is preloaded rather than written by a plan step, so it never appears
+    # in plan_steps -- but plan.validate() checks session.artifacts directly, not
+    # the PRELOADED default, so it has to be seeded here regardless of from_stage.
+    session.seed_from_disk("style")
+
+    resume_at = record.plan_steps.index(stage)
+    for name in record.plan_steps[:resume_at]:
+        spec = registry.get(name)
+        if spec.writes:
+            session.seed_from_disk(spec.writes)
+
+    remaining = tuple(record.plan_steps[resume_at:])
+    plan = Plan(name=f"{record.style_id}_resume_from_{stage}", steps=remaining)
+    return session, plan
+
+
+def resume_run(ctx: Context, run_id: str, from_stage: str | None = None) -> RunRecord:
+    """Continue a run from where it stopped, or from a named stage.
+
+    Reuses `execute` unchanged rather than adding a resume-aware branch to it: a
+    resumed run is an ordinary run whose session happens to already hold some
+    artifacts, not a different code path that needs its own testing.
+    """
+    session, plan = resume_session(ctx, run_id, from_stage)
+    return execute(ctx, session, plan)
 
 
 def run_batch(

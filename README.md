@@ -215,7 +215,27 @@ sample taken at the exact ends describes those instead of the content. Around
 If the frames cannot be decoded the brief still gets built from `--text`, with the
 prompt saying so rather than implying stills were seen.
 
-### 3. Prove the hook is not frozen
+### 3. Resume a run that failed partway through
+
+Every stage writes its output to disk before the next one starts, so a failure
+does not throw away what came before it. If `render` billed for six clips and
+`assemble` then broke on something unrelated — a moved file, a codec quirk —
+those six clips do not need to be rendered again:
+
+```bash
+styleloom runs resume <run_id>                        # from the stage it failed at
+styleloom runs resume <run_id> --from-stage assemble  # or a stage named explicitly
+```
+
+The default is the stage `runs ls` reports the run as `FAILED at`. Naming a stage
+explicitly instead redoes it even if it technically succeeded — for a clip that
+rendered but turned out wrong, say — without re-running everything before it. The
+plan this reopens is whichever one the run was actually given, recorded in
+`run.json` at the time; it does not recompute `default_plan()` off current
+settings, since `--no-qc` or the video provider can change between when a run
+fails and when someone comes back to fix it.
+
+### 4. Prove the hook is not frozen
 
 ```bash
 styleloom hook preview my_style -t "엑셀 단축키" -n 8
@@ -234,7 +254,7 @@ styleloom runs hook <run_id>       # pool, sampled archetype, candidates, scores
 styleloom style history my_style   # what this style used recently, per element
 ```
 
-### 4. Check what a run will cost
+### 5. Check what a run will cost
 
 ```bash
 styleloom models --style my_style
@@ -243,7 +263,7 @@ styleloom models --style my_style
 Prices every endpoint in `configs/fal_models.yaml` against that style's own shot
 count, and shows what `multi_shot` mode would save. Arithmetic only — no API calls.
 
-### 5. Collect the submission bundle
+### 6. Collect the submission bundle
 
 ```bash
 styleloom export bundle/
@@ -274,6 +294,7 @@ bundle/
 | `styleloom batch <id>` | Several inputs through one system. Repeat `-t` / `-f`, or `--inputs-file` |
 | `styleloom runs ls` | Recent runs, status, hook, QC score. `--style` to filter |
 | `styleloom runs show <run_id>` | The run record |
+| `styleloom runs resume <run_id>` | Continue a run from where it failed. `--from-stage` to name a step explicitly |
 | `styleloom runs hook <run_id>` | The full hook decision trail for that run |
 | `styleloom hook preview <id>` | N hook generations from one input, no rendering |
 | `styleloom models` | Endpoint specs and per-video cost. `--style` for real numbers |
@@ -779,7 +800,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-278 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+288 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting

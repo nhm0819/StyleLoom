@@ -18,7 +18,21 @@ from pydantic import BaseModel
 
 from ..errors import ToolError
 from ..memory import RunStore
-from ..schema import RunInputs, RunRecord, RunStatus
+from ..schema import (
+    AssembleResult,
+    Brief,
+    Casting,
+    HookResult,
+    Keyframes,
+    Outline,
+    QCReport,
+    RenderResult,
+    RunInputs,
+    RunRecord,
+    RunStatus,
+    Storyboard,
+    StyleSchema,
+)
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -41,6 +55,23 @@ ARTIFACT_FILES = {
     "render": "render.json",
     "assemble": "assemble.json",
     "qc": "qc_report.json",
+}
+
+# The model type behind each file above. Kept as its own table rather than folded
+# into ARTIFACT_FILES because the two are read at different moments for different
+# reasons: the filename is needed to write; the type is needed only to read one
+# back, which happens once -- when resuming a run partway through.
+ARTIFACT_TYPES: dict[str, type[BaseModel]] = {
+    "style": StyleSchema,
+    "brief": Brief,
+    "casting": Casting,
+    "outline": Outline,
+    "hook": HookResult,
+    "storyboard": Storyboard,
+    "keyframe": Keyframes,
+    "render": RenderResult,
+    "assemble": AssembleResult,
+    "qc": QCReport,
 }
 
 
@@ -110,6 +141,30 @@ class RunSession:
     def has(self, key: str) -> bool:
         return key in self.artifacts
 
+    def seed_from_disk(self, key: str) -> BaseModel:
+        """Load a previously-saved artifact back into memory.
+
+        For resuming a run partway through: the stages before the resume point
+        already ran and wrote their output to disk, and the tools that read them
+        call `get`, which looks in memory -- not a file they reopen themselves.
+        This is the read side of `put`'s write side, keyed the same way.
+        """
+        filename = ARTIFACT_FILES.get(key)
+        model_type = ARTIFACT_TYPES.get(key)
+        if filename is None or model_type is None:
+            raise ToolError(f"artifact {key!r} has no file to resume from")
+        path = self.dir / filename
+        if not path.exists():
+            raise ToolError(
+                f"cannot resume: {path} is missing. Stage {key!r} either never "
+                "completed in this run or its file was removed -- resume from "
+                "an earlier stage, or start a fresh run."
+            )
+        artifact = model_type.model_validate_json(path.read_text(encoding="utf-8"))
+        self.artifacts[key] = artifact
+        self.record.artifacts[key] = str(path)
+        return artifact
+
     def save_raw(self, name: str, payload: dict[str, Any]) -> Path:
         return self.store.save_raw(self.run_id, name, payload)
 
@@ -131,4 +186,7 @@ class RunSession:
         )
 
     def finish(self) -> RunRecord:
-        return self.mark(status=RunStatus.DONE, stage="done")
+        # Clears a stale error from an earlier failed attempt at this same run_id.
+        # Without this, a run that failed and was then resumed to completion would
+        # show status=DONE next to an error message from the attempt before it.
+        return self.mark(status=RunStatus.DONE, stage="done", error=None)

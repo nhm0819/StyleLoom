@@ -23,7 +23,15 @@ from .errors import (
 )
 from .events import Event, EventKind, EventSink, ListSink, NullSink
 from .planner import Plan, build_plan
-from .runner import default_plan, execute, prepare_session, run_batch, run_once
+from .runner import (
+    default_plan,
+    execute,
+    prepare_session,
+    resume_run,
+    resume_session,
+    run_batch,
+    run_once,
+)
 from .schema import (
     Brief,
     Casting,
@@ -80,6 +88,8 @@ __all__ = [
     "extract_style",
     "new_run_id",
     "prepare_session",
+    "resume_run",
+    "resume_session",
     "run_batch",
     "run_once",
 ]
