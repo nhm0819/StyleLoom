@@ -18,9 +18,6 @@ parameter name is accepted and ignored rather than rejected.
 from __future__ import annotations
 
 import base64
-import hashlib
-import hmac
-import json
 import math
 import time
 from pathlib import Path
@@ -32,40 +29,6 @@ from ..config import Settings
 from ..errors import VideoProviderError
 from ..media import image_size
 from .base import BaseVideoProvider, MotionShot
-
-
-def _b64url(raw: bytes) -> str:
-    """Base64url without padding, which is what JWT uses everywhere."""
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
-
-
-def encode_jwt(access_key: str, secret_key: str, issued_at: int, ttl_sec: int = 1800) -> str:
-    """Sign the HS256 token Kling expects.
-
-    Hand-rolled rather than adding PyJWT: HS256 is hmac-sha256 over
-    `header.payload`, both base64url-encoded, and this keeps the provider free of
-    optional dependencies.
-
-    `nbf` is backdated five seconds on purpose -- a client clock one second ahead
-    of Kling's would otherwise have its own token rejected as not-yet-valid, with
-    a 401 that says nothing about clocks.
-    """
-    if not access_key or not secret_key:
-        raise VideoProviderError(
-            "KLING_ACCESS_KEY and KLING_SECRET_KEY are required for video_provider=kling"
-        )
-    header = _b64url(
-        json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode()
-    )
-    payload = _b64url(
-        json.dumps(
-            {"iss": access_key, "exp": issued_at + ttl_sec, "nbf": issued_at - 5},
-            separators=(",", ":"),
-        ).encode()
-    )
-    signing_input = f"{header}.{payload}".encode("ascii")
-    signature = hmac.new(secret_key.encode(), signing_input, hashlib.sha256).digest()
-    return f"{header}.{payload}.{_b64url(signature)}"
 
 
 def _is_v3(spec: dict) -> bool:
@@ -122,9 +85,12 @@ class KlingVideoProvider(BaseVideoProvider):
         # budget prompts and pack windows against an endpoint it never calls.
         self.render = self.i2v if settings.use_first_frame else self.t2v
         self.render_id = self.i2v_id if settings.use_first_frame else self.t2v_id
-        # Signing needs the secret on every call, so it is checked once here
-        # rather than producing a 401 twenty minutes into a batch.
-        encode_jwt(settings.kling_access_key, settings.kling_secret_key, int(time.time()))
+        # Checked once here rather than producing a 401 twenty minutes into a batch.
+        if not settings.kling_api_key:
+            raise VideoProviderError(
+                "KLING_API_KEY is required for video_provider=kling. Create one in "
+                "the Kling console (+ New API Key); it is shown only once."
+            )
 
     @staticmethod
     def _spec(specs: dict, kind: str, model_name: str) -> dict:
@@ -176,13 +142,15 @@ class KlingVideoProvider(BaseVideoProvider):
     # --- transport --------------------------------------------------------- #
 
     def _headers(self) -> dict[str, str]:
-        token = encode_jwt(
-            self.settings.kling_access_key,
-            self.settings.kling_secret_key,
-            int(time.time()),
-        )
+        """The API Key, verbatim.
+
+        No signing and no expiry. The older access-key/secret-key scheme had the
+        client build an HS256 JWT per request -- `iss` the access key, signed with
+        the secret, 30-minute `exp` -- which is why this used to be a function of
+        two credentials and a clock. The current API Key is the bearer token.
+        """
         return {
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Bearer {self.settings.kling_api_key}",
             "Content-Type": "application/json; charset=utf-8",
         }
 

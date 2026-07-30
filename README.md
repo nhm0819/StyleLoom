@@ -104,7 +104,7 @@ variables take precedence over the file either way, so `-e ANTHROPIC_API_KEY` st
 overrides:
 
 ```bash
-docker run --rm -e ANTHROPIC_API_KEY -e KLING_ACCESS_KEY -e KLING_SECRET_KEY \
+docker run --rm -e ANTHROPIC_API_KEY -e KLING_API_KEY \
   -v "$PWD/data:/app/data" \
   styleloom run my_style --text "..."
 ```
@@ -507,9 +507,9 @@ anywhere**, and the repo runs end to end without any.
 | Variable | Where to get it | What it is used for | Without it |
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API keys | Brief extraction, outline, hook candidates, naming the reference's grade and tone | Offline `mock` LLM: real structure, placeholder wording |
-| `KLING_ACCESS_KEY` + `KLING_SECRET_KEY` | [kling.ai/dev](https://kling.ai/dev) → console → API keys | Keyframes (Kling Image) and image-to-video (Kling Video) | ffmpeg `mock` renderer: real MP4s, gradient footage |
+| `KLING_API_KEY` | [kling.ai/dev](https://kling.ai/dev) → console → **+ New API Key** (shown once) | Keyframes (Kling Image) and image-to-video (Kling Video) | ffmpeg `mock` renderer: real MP4s, gradient footage |
 
-All three are also accepted as `STYLELOOM_ANTHROPIC_API_KEY`, `STYLELOOM_KLING_ACCESS_KEY` and `STYLELOOM_KLING_SECRET_KEY`, which
+Both are also accepted as `STYLELOOM_ANTHROPIC_API_KEY` and `STYLELOOM_KLING_API_KEY`, which
 win if both forms are set.
 
 **Providers default to `auto`**: each uses the real service when its key is present
@@ -779,7 +779,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-281 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+278 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting

@@ -17,9 +17,6 @@ which is what makes that possible.
 from __future__ import annotations
 
 import base64
-import hashlib
-import hmac
-import json
 from pathlib import Path
 
 import cv2
@@ -31,7 +28,6 @@ from styleloom_core.providers.base import MotionShot
 from styleloom_core.providers.kling import (
     KlingVideoProvider,
     aspect_ratio_for,
-    encode_jwt,
     load_kling_specs,
 )
 
@@ -44,8 +40,7 @@ V3_API = "kling-3.0"
 def make_provider(**overrides) -> KlingVideoProvider:
     fields: dict = {
         "video_provider": "kling",
-        "kling_access_key": "test-access",
-        "kling_secret_key": "test-secret",
+        "kling_api_key": "test-api-key",
         "width": 720,
         "height": 1280,
     }
@@ -107,50 +102,27 @@ def test_an_unknown_model_name_fails_on_construction():
         make_provider(kling_t2v_model="kling-v9-imaginary")
 
 
-def test_missing_credentials_fail_on_construction():
-    with pytest.raises(VideoProviderError, match="KLING_ACCESS_KEY"):
-        make_provider(kling_secret_key="")
+def test_a_missing_api_key_fails_on_construction():
+    with pytest.raises(VideoProviderError, match="KLING_API_KEY"):
+        make_provider(kling_api_key="")
 
 
-# --- JWT ------------------------------------------------------------------- #
+# --- authentication -------------------------------------------------------- #
 
 
-def test_jwt_signature_matches_an_independently_computed_one():
-    """Recomputed from the spec rather than compared to a stored string, so this
-    fails if the encoding drifts rather than if the token merely changes."""
-    token = encode_jwt("ak", "sk", issued_at=1_700_000_000)
-    header_b64, payload_b64, signature_b64 = token.split(".")
+def test_the_api_key_is_sent_verbatim_as_a_bearer_token():
+    """No signing and no expiry.
 
-    expected = hmac.new(
-        b"sk", f"{header_b64}.{payload_b64}".encode("ascii"), hashlib.sha256
-    ).digest()
-    assert signature_b64 == base64.urlsafe_b64encode(expected).rstrip(b"=").decode()
-
-
-def test_jwt_carries_the_claims_kling_checks():
-    token = encode_jwt("my-access-key", "sk", issued_at=1_700_000_000)
-    payload = json.loads(_unpad(token.split(".")[1]))
-    assert payload["iss"] == "my-access-key"
-    assert payload["exp"] == 1_700_000_000 + 1800
-    # Backdated on purpose: a client clock one second ahead of Kling's would
-    # otherwise have its own token rejected as not-yet-valid.
-    assert payload["nbf"] == 1_700_000_000 - 5
-
-
-def test_jwt_header_declares_hs256():
-    header = json.loads(_unpad(encode_jwt("ak", "sk", 0).split(".")[0]))
-    assert header == {"alg": "HS256", "typ": "JWT"}
-
-
-def test_jwt_is_unpadded_base64url():
-    """`=` padding and `+/` are both illegal in a JWT segment."""
-    for segment in encode_jwt("a" * 7, "s" * 11, 1_700_000_001).split("."):
-        assert "=" not in segment
-        assert "+" not in segment and "/" not in segment
-
-
-def _unpad(segment: str) -> bytes:
-    return base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
+    The older scheme took an access key and a secret key and had the client build an
+    HS256 JWT per request -- `iss` the access key, signed with the secret, 30-minute
+    `exp`, `nbf` backdated for clock skew. Those tests, and the hand-rolled signer
+    they covered, are gone with it: the current API Key *is* the bearer token, and it
+    is the only credential form that covers models past 3.0.
+    """
+    headers = make_provider(kling_api_key="ak-live-123")._headers()
+    assert headers["Authorization"] == "Bearer ak-live-123"
+    # A JWT would have two dots in it. This must not be signed or wrapped.
+    assert headers["Authorization"].count(".") == 0
 
 
 # --- keyframe payload ------------------------------------------------------ #

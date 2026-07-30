@@ -106,19 +106,12 @@ def doctor(
         )
 
     line(True, "video provider", video_provider)
-    # Both halves are reported separately: supplying one and forgetting the other
-    # is the likely mistake, and "credentials missing" would not say which.
     line(
-        bool(settings.kling_access_key),
-        "  kling access key",
-        "detected" if settings.kling_access_key else "not set -- KLING_ACCESS_KEY",
+        bool(settings.kling_api_key),
+        "  kling api key",
+        "detected" if settings.kling_api_key else "not set -- KLING_API_KEY",
     )
-    line(
-        bool(settings.kling_secret_key),
-        "  kling secret key",
-        "detected" if settings.kling_secret_key else "not set -- KLING_SECRET_KEY",
-    )
-    if settings.kling_secret_key and video_provider != "kling":
+    if settings.kling_api_key and video_provider != "kling":
         typer.secho(
             "      key is present but video_provider is pinned to "
             f"{settings.video_provider!r}. Unset STYLELOOM_VIDEO_PROVIDER to use it.",

@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         env_file=".env",
         extra="ignore",
         # Without this, fields with a validation_alias accept ONLY the alias, so
-        # Settings(kling_secret_key="x") silently yields "".
+        # Settings(kling_api_key="x") silently yields "".
         populate_by_name=True,
     )
 
@@ -55,14 +55,13 @@ class Settings(BaseSettings):
 
     # --- Video (first frame + image-to-video) ------------------------------
     video_provider: str = "auto"  # auto | mock | kling
-    # The access key travels inside the token; the secret key signs it.
-    kling_access_key: str = Field(
+    # One key, sent as-is. Kling's older scheme took an access key and a secret key
+    # and had the client sign a 30-minute HS256 JWT from them; the current API Key
+    # is the bearer token itself, and it is the only credential form that covers
+    # models past 3.0. Nothing here signs anything any more.
+    kling_api_key: str = Field(
         default="",
-        validation_alias=AliasChoices("STYLELOOM_KLING_ACCESS_KEY", "KLING_ACCESS_KEY"),
-    )
-    kling_secret_key: str = Field(
-        default="",
-        validation_alias=AliasChoices("STYLELOOM_KLING_SECRET_KEY", "KLING_SECRET_KEY"),
+        validation_alias=AliasChoices("STYLELOOM_KLING_API_KEY", "KLING_API_KEY"),
     )
     # api-beijing.klingai.com is a separate account system, not a region.
     kling_base_url: str = "https://api-singapore.klingai.com"
@@ -130,7 +129,7 @@ class Settings(BaseSettings):
     def resolved_video_provider(self) -> str:
         if self.video_provider != "auto":
             return self.video_provider
-        return "kling" if self.kling_secret_key else "mock"
+        return "kling" if self.kling_api_key else "mock"
 
     def provider_summary(self) -> str:
         def fmt(requested: str, resolved: str) -> str:
