@@ -4,13 +4,22 @@
 # accepted and ignored rather than rejected, so the request succeeds and the
 # parameter does nothing. Adding a model is a change here, not to the provider.
 #
-# Keys are `model_name` values sent in the request body, not URL segments. The API
-# has one path per capability and selects the model in the body:
+# Keys select an entry here. Where the model name goes in the request depends on
+# which API generation the entry speaks, and `api:` says which:
 #
-#     POST https://api-singapore.klingai.com/v1/videos/text2video
-#     {"model_name": "kling-v3", "mode": "std", ...}
+#   api: v3      the current API. The model is a URL segment and the body is
+#                `contents`/`settings`/`options`:
 #
-# `mode` (std | pro) is the quality tier and lives in Settings, not here.
+#                    POST /image-to-video/kling-3.0
+#                    {"contents": [...], "settings": {"duration": 10, ...}}
+#
+#   (no api key) the legacy API. One path per capability, model in the body:
+#
+#                    POST /v1/videos/text2video
+#                    {"model_name": "kling-v3", "mode": "std", ...}
+#
+# `mode` (std | pro) is the quality tier and lives in Settings, not here. It is a
+# request field on the legacy API and the `resolution` enum on v3.
 #
 # Three capabilities, three sections. `text_to_image` builds a first frame,
 # `image_to_video` animates it, and `text_to_video` is the fallback for a run with
@@ -35,6 +44,42 @@ pricing_source: >-
 base_url: https://api-singapore.klingai.com
 
 text_to_video:
+  # The current API, verified against the Kling 3.0 text-to-video reference.
+  #
+  # Same three-object body as image-to-video and the same /tasks polling, with two
+  # differences that are specific to having no input image:
+  #
+  #   * The prompt is a top-level `prompt` STRING, not a `contents` array. There is
+  #     no image to type, so there is nothing for the array to hold.
+  #   * `settings.aspect_ratio` exists here and only here. image-to-video reads the
+  #     ratio off the start frame; this endpoint has nothing to read.
+  kling-3.0:
+    api: v3
+    path: /text-to-video/kling-3.0
+    task_path: /tasks
+    output_type: video
+    prompt_format: text
+    aspect_ratio_choices: ["9:16", "16:9", "1:1"]   # verified: the enum is these three
+    duration_param: duration
+    min_duration: 3
+    max_duration: 15
+    max_shot_window_sec: 15
+    max_shots_per_request: 6
+    max_prompt_chars: 3072            # hard ceiling; 2500 is the recommendation
+    max_shot_prompt_chars: 512
+    multi_shot_syntax: semicolon_prompt
+    capabilities: [semicolon_prompt]
+    resolution_by_mode:
+      std: 720p
+      pro: 1080p
+    settings_defaults:
+      audio: "off"
+    # There is no negative_prompt field on 3.0; the prompt itself "can include
+    # positive and negative descriptions". Appended to single-cut prompts only --
+    # see negative_clause on the image_to_video entry for why not to multi-shot ones.
+    negative_clause: "Avoid any text overlay, subtitles, captions, watermark or logo."
+
+  # --- legacy API (/v1/videos/...) ----------------------------------------- #
   kling-v3:
     # POST /v1/videos/text2video   verified
     path: /v1/videos/text2video
@@ -105,21 +150,110 @@ text_to_image:
     # list because the image endpoint offers eight named ratios plus Auto.
     aspect_ratio_choices: ["9:16", "16:9", "1:1", "3:4", "4:3", "2:3", "3:2", "21:9"]
     max_prompt_chars: 2500
-    # One reference image, sent as raw Base64 in a flat field, and addressed from
-    # the prompt by token. This is the parameter that makes every window's first
-    # frame a descendant of one anchor rather than an independent roll.
+    # One reference image, sent as raw Base64 in a flat field. This is the
+    # parameter that makes every window's first frame a descendant of one anchor
+    # rather than an independent roll.
+    #
+    # No reference_token. There was a `<<<image_1>>>` prefix here, and this
+    # endpoint documents no token addressing at all: the reference is the `image`
+    # field, and strength is `image_fidelity`/`human_fidelity`, both of which are
+    # kling-v1/v1-5 only. So the prefix was not addressing anything -- it was
+    # twelve literal characters at the front of the prompt, where the model is
+    # weighting most heavily.
     reference_param: image
-    reference_token: "<<<image_1>>>"
     output_key: images                # data.task_result.images[].url
     defaults:
-      # Strings, not ints: the official example sends "n": "9" and "resolution":
-      # "2k" quoted. A bare int is the kind of thing that is accepted and ignored.
-      n: "1"
+      # `n` is an int in the schema and the official example sends it unquoted.
+      # It was "1" here; a quoted value is the kind of thing that is accepted and
+      # ignored, and the default is 1 anyway, so this was invisible.
+      n: 1
       # 1k is enough for a 720x1280 start frame. 2k/4k are available and cost more
       # for pixels the video endpoint discards when it reads the frame.
       resolution: "1k"
 
 image_to_video:
+  # The current API, verified against the Kling 3.0 image-to-video reference.
+  #
+  # It is not the legacy shape with extra fields -- it is a different request and a
+  # different response, and every difference fails silently rather than loudly:
+  #
+  #   * The model is in the PATH (/image-to-video/kling-3.0), not in `model_name`.
+  #   * The body is three objects -- `contents`, `settings`, `options`. A flat
+  #     `prompt`/`image`/`duration` request is accepted and generates 5s of
+  #     defaults, because every unknown key is ignored.
+  #   * There is no `mode`; the quality tier is `settings.resolution`.
+  #   * There is no `negative_prompt`; negatives go inside the prompt text.
+  #   * There is no `multi_prompt` array and no `shot_type`. Multi-shot is the
+  #     semicolon shot list written into the prompt itself -- see below.
+  #   * The task is read from GET /tasks?task_ids=..., which answers with a LIST,
+  #     and its terminal status is `succeeded`, not `succeed`.
+  kling-3.0:
+    api: v3
+    path: /image-to-video/kling-3.0
+    # One shared task endpoint for every 3.0 capability, not {create path}/{id}.
+    task_path: /tasks
+    # `outputs` is a typed list rather than task_result.<key>; the type selects.
+    output_type: video
+    # The prompt is a typed entry in `contents` rather than a top-level string --
+    # unlike the 3.0 text-to-video endpoint, which has no array at all.
+    prompt_format: contents
+    # Deliberately absent from the request, unlike the text_to_video entries: with a
+    # start frame the endpoint reads the ratio off the image, and `aspect_ratio` is
+    # not a field on this endpoint at all. Sending one can only disagree with the
+    # frame that was just uploaded.
+    sends_aspect_ratio: false
+    # `contents: [{type: first_frame, url: <base64|url>}]`. The type is what makes
+    # it a start frame rather than an Element reference, and Base64 goes in raw --
+    # a data:image/png;base64, prefix is a 400.
+    first_frame_type: first_frame
+    duration_param: duration          # inside `settings`, and an int not a string
+    min_duration: 3                   # verified: duration is an enum, 3..15
+    max_duration: 15
+    max_shot_window_sec: 15           # one request is one video, so the window IS
+                                      # the duration ceiling
+    max_shots_per_request: 6          # verified: "1-6 shots supported"
+    # Verified: the hard ceiling is 3072 and 2500 is the documented recommendation.
+    # It has to be the hard ceiling here because the whole shot list shares this
+    # one field: six entries at the 512-character limit is 3072+ characters, and
+    # budgeting to 2500 would refuse a storyboard the endpoint accepts.
+    max_prompt_chars: 3072
+    max_shot_prompt_chars: 512        # verified: per-shot `words` limit
+    # Multi-shot is prose, not an array:
+    #
+    #   "shot 1, 3, words; shot 2, 4, words;"
+    #
+    # n is the 1-based shot number, m its duration in whole seconds (each >= 1s,
+    # and the sum MUST equal settings.duration). This is the only multi-shot form
+    # the 3.0 API has -- `multi_prompt` was the legacy transport and is gone.
+    multi_shot_syntax: semicolon_prompt
+    capabilities: [semicolon_prompt, first_frame]
+    # std/pro is not a request field on 3.0. It maps onto the resolution enum,
+    # which is what the tier meant anyway: std renders 720p, pro 1080p. (4k is
+    # available and costs more for pixels a 720x1280 timeline discards.)
+    resolution_by_mode:
+      std: 720p
+      pro: 1080p
+    settings_defaults:
+      # `native` would generate audio to match the visuals. Captions are burned in
+      # by ffmpeg and the reference set has no dialogue, so this is a surcharge for
+      # something the output discards.
+      audio: "off"
+    # There is no negative_prompt field on this API. The prompt itself "can include
+    # positive and negative descriptions", so the clause is appended to the prompt
+    # text -- but on SINGLE-CUT requests only.
+    #
+    # Not on a semicolon shot list. The documented form is `shot n, m, words;` and
+    # there is no documented place in it for a global clause: prose before the list
+    # or after the final semicolon may parse as a malformed shot, which collapses
+    # the whole storyboard to one long cut and still reports success. Multi-shot
+    # relies on the start frame instead, which the keyframe stage generates with
+    # "no text, no captions, no watermark" in its own prompt.
+    negative_clause: "Avoid any text overlay, subtitles, captions, watermark or logo."
+
+  # --- legacy API (/v1/videos/...) ----------------------------------------- #
+  #
+  # Kept because the legacy endpoints still exist and someone may be pinned to
+  # them. They speak the flat request shape and the `succeed`/task_result response.
   kling-v3:
     # POST /v1/videos/image2video/   verified. A different path from text2video,
     # not the same path with an extra field.

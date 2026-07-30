@@ -274,7 +274,7 @@ def test_models_prices_the_endpoints_without_a_style(env):
     result = runner.invoke(app, ["models"])
     assert result.exit_code == 0
     assert "kling" in result.output
-    assert "multi_prompt" in result.output
+    assert "multi_shot" in result.output
     assert "wasted" in result.output
 
 

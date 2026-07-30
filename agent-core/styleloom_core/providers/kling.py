@@ -67,6 +67,17 @@ def encode_jwt(access_key: str, secret_key: str, issued_at: int, ttl_sec: int = 
     return f"{header}.{payload}.{_b64url(signature)}"
 
 
+def _is_v3(spec: dict) -> bool:
+    """Whether this endpoint speaks the 3.0 request and response shape.
+
+    The two generations differ in the request envelope, in where the task id is
+    read from, in which endpoint answers a poll, and in the string that means
+    finished. None of those disagreements produce an error, so the flag is checked
+    rather than inferred from the path.
+    """
+    return spec.get("api") == "v3"
+
+
 def load_kling_specs(settings: Settings) -> dict:
     path = settings.resolve_config(settings.kling_models_path)
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -132,7 +143,12 @@ class KlingVideoProvider(BaseVideoProvider):
 
     @property
     def supports_multi_shot(self) -> bool:
-        return "multi_prompt" in (self.render.get("capabilities") or [])
+        """Either transport counts. The legacy API carries a shot list in a
+        `multi_prompt` array; the 3.0 API carries it as a semicolon shot list
+        inside the prompt. Both put several cuts in one generation, which is the
+        capability the caller is asking about."""
+        caps = set(self.render.get("capabilities") or [])
+        return bool(caps & {"multi_prompt", "semicolon_prompt"})
 
     @property
     def supports_first_frame(self) -> bool:
@@ -169,8 +185,9 @@ class KlingVideoProvider(BaseVideoProvider):
             "Content-Type": "application/json; charset=utf-8",
         }
 
-    def _submit(self, path: str, payload: dict) -> str:
+    def _submit(self, spec: dict, payload: dict) -> str:
         """Create a task, return its id."""
+        path = spec["path"]
         url = f"{self.base_url}{path}"
         try:
             response = httpx.post(url, json=payload, headers=self._headers(), timeout=60.0)
@@ -191,35 +208,57 @@ class KlingVideoProvider(BaseVideoProvider):
                 f"kling {path} rejected the request: "
                 f"code={body.get('code')} {body.get('message', '')}"
             )
-        task_id = (body.get("data") or {}).get("task_id")
+        # The 3.0 endpoints return `data.id`; the legacy ones `data.task_id`.
+        # Reading the wrong key aborts a task that was created and will be billed.
+        key = "id" if _is_v3(spec) else "task_id"
+        task_id = (body.get("data") or {}).get(key)
         if not task_id:
-            raise VideoProviderError(f"no task_id in kling response: {str(body)[:300]}")
+            raise VideoProviderError(f"no {key} in kling response: {str(body)[:300]}")
         return str(task_id)
 
-    def _poll(self, path: str, task_id: str, output_key: str) -> str:
+    def _poll(self, spec: dict, task_id: str) -> str:
         """Block until the task finishes, return the first result URL.
+
+        Two query shapes, and every part of the disagreement is silent. The 3.0
+        endpoints share one task endpoint -- GET /tasks?task_ids=... -- which
+        answers with a *list*, calls the field `status`, and says `succeeded`. The
+        legacy endpoints answer on GET {create path}/{id} with a single object
+        whose field is `task_status` and whose terminal value is `succeed`. Polling
+        with the wrong pair waits out the full timeout on a task that finished
+        minutes earlier, and the generation is billed either way.
 
         Polling rather than the `callback_url` the API also offers: a callback
         needs a public HTTP listener, which turns a CLI into a service.
         """
-        url = f"{self.base_url}{path.rstrip('/')}/{task_id}"
+        v3 = _is_v3(spec)
+        if v3:
+            url = f"{self.base_url}{spec['task_path']}"
+            params: dict[str, str] | None = {"task_ids": task_id}
+            status_key, message_key, done = "status", "message", "succeeded"
+        else:
+            url = f"{self.base_url}{spec['path'].rstrip('/')}/{task_id}"
+            params = None
+            status_key, message_key, done = "task_status", "task_status_msg", "succeed"
+
         deadline = time.monotonic() + self.settings.kling_timeout_sec
         last_status = "submitted"
         while time.monotonic() < deadline:
             time.sleep(self.settings.kling_poll_interval_sec)
             try:
-                response = httpx.get(url, headers=self._headers(), timeout=60.0)
+                response = httpx.get(
+                    url, params=params, headers=self._headers(), timeout=60.0
+                )
                 response.raise_for_status()
-                data = (response.json().get("data") or {})
+                task = self._task_record(spec, response.json(), task_id)
             except Exception as exc:
                 raise VideoProviderError(f"kling poll {task_id} failed: {exc}") from exc
 
-            last_status = data.get("task_status", last_status)
-            if last_status == "succeed":
-                return self._result_url(data, output_key)
+            last_status = task.get(status_key, last_status)
+            if last_status == done:
+                return self._result_url(spec, task)
             if last_status == "failed":
                 raise VideoProviderError(
-                    f"kling task {task_id} failed: {data.get('task_status_msg', '')}"
+                    f"kling task {task_id} failed: {task.get(message_key, '')}"
                 )
         raise VideoProviderError(
             f"kling task {task_id} still {last_status} after "
@@ -229,11 +268,42 @@ class KlingVideoProvider(BaseVideoProvider):
         )
 
     @staticmethod
-    def _result_url(data: dict, output_key: str) -> str:
-        items = (data.get("task_result") or {}).get(output_key) or []
+    def _task_record(spec: dict, body: dict, task_id: str) -> dict:
+        """The one task in a poll response, whichever shape it arrived in.
+
+        `/tasks` answers with a list even for a single id, and can answer with a
+        short one just after submission, so a record that is not there yet is
+        "keep waiting" rather than an error -- an empty dict has no terminal
+        status and the loop simply polls again.
+        """
+        data = body.get("data")
+        if not _is_v3(spec):
+            return data or {}
+        records = [r for r in (data or []) if isinstance(r, dict)]
+        for record in records:
+            if str(record.get("id")) == task_id:
+                return record
+        # One id was queried, so one unlabelled record is that id.
+        return records[0] if len(records) == 1 else {}
+
+    @staticmethod
+    def _result_url(spec: dict, task: dict) -> str:
+        if _is_v3(spec):
+            # A typed `outputs` list rather than task_result.<key>, and `url` not
+            # `watermark_url`: both are present on success and the watermarked one
+            # is unusable as a deliverable.
+            wanted = spec.get("output_type", "video")
+            for item in task.get("outputs") or []:
+                if item.get("type") == wanted and item.get("url"):
+                    return item["url"]
+            raise VideoProviderError(
+                f"no {wanted} output in kling result: {str(task)[:300]}"
+            )
+        output_key = spec["output_key"]
+        items = (task.get("task_result") or {}).get(output_key) or []
         if items and isinstance(items[0], dict) and items[0].get("url"):
             return items[0]["url"]
-        raise VideoProviderError(f"no {output_key} URL in kling result: {str(data)[:300]}")
+        raise VideoProviderError(f"no {output_key} URL in kling result: {str(task)[:300]}")
 
     @staticmethod
     def _download(url: str, out_path: Path) -> Path:
@@ -257,7 +327,7 @@ class KlingVideoProvider(BaseVideoProvider):
             spec.get("aspect_ratio_choices") or ["9:16", "16:9", "1:1"],
         )
 
-    def _duration_string(self, spec: dict, duration: float) -> str:
+    def _duration_seconds(self, spec: dict, duration: float) -> int:
         """Whole seconds for a single-cut request, always rounded UP.
 
         `render_shot` trims a long clip down and cannot extend a short one, so
@@ -266,7 +336,12 @@ class KlingVideoProvider(BaseVideoProvider):
         """
         wanted = max(duration, float(spec.get("min_duration", 1)))
         seconds = math.ceil(wanted - 1e-9)
-        return str(min(seconds, int(spec.get("max_duration", seconds))))
+        return min(seconds, int(spec.get("max_duration", seconds)))
+
+    def _duration_string(self, spec: dict, duration: float) -> str:
+        """The same number as a bare string, which is what legacy `duration` takes.
+        On v3 the field is an int inside `settings` and takes the number itself."""
+        return str(self._duration_seconds(spec, duration))
 
     def shot_billed_duration(self, seconds: float) -> float:
         """One cut inside a multi-shot request, to whole seconds with a floor of 1.
@@ -275,7 +350,11 @@ class KlingVideoProvider(BaseVideoProvider):
         never trimmed, so rounding up would stretch every video. floor(x + 0.5)
         rather than banker's round(), where round(2.5) is 2.
         """
-        if self.render.get("multi_prompt_duration_type") == "integer_string":
+        integral = (
+            _is_v3(self.render)  # `m` in "shot n, m, words" is whole seconds
+            or self.render.get("multi_prompt_duration_type") == "integer_string"
+        )
+        if integral:
             return float(max(1, math.floor(seconds + 0.5)))
         return seconds
 
@@ -327,10 +406,110 @@ class KlingVideoProvider(BaseVideoProvider):
             return self.i2v, self.i2v_id
         return self.t2v, self.t2v_id
 
+    @staticmethod
+    def _check_prompt_limit(spec: dict, model_id: str, prompt: str) -> None:
+        limit = int(spec.get("max_prompt_chars", 0))
+        if limit and len(prompt) > limit:
+            raise VideoProviderError(
+                f"prompt is {len(prompt)} characters, over {model_id}'s "
+                f"{limit}-character limit."
+            )
+
+    @staticmethod
+    def _check_shot_prompt(spec: dict, model_id: str, index: int, prompt: str) -> None:
+        """The per-cut budget, which is far tighter than the whole-prompt one.
+
+        Refused, not trimmed. The caller builds prompts to this budget already; if
+        one arrives over it, something upstream changed and a silent trim would cut
+        mid-clause -- handing the model half a sentence and charging for the result.
+        """
+        limit = int(spec.get("max_shot_prompt_chars", 0))
+        if limit and len(prompt) > limit:
+            raise VideoProviderError(
+                f"storyboard entry {index} is {len(prompt)} characters, "
+                f"over {model_id}'s {limit}-character limit for a shot "
+                "prompt. Shorten the style keywords, or render with "
+                "render_mode=per_shot, where the whole prompt goes in the "
+                f"top-level field ({spec.get('max_prompt_chars', '?')} chars)."
+            )
+
+    def _build_v3_payload(
+        self,
+        spec: dict,
+        model_id: str,
+        text: str,
+        duration: int,
+        multi_shot: bool,
+        first_frame: Path | None,
+    ) -> dict:
+        """The 3.0 request: a prompt, a `settings` object, and nothing flat.
+
+        Nothing from the legacy shape survives. `model_name` is in the path, `mode`
+        does not exist, `negative_prompt` does not exist, and `aspect_ratio` moved
+        inside `settings`. Sending the old names is not an error: unknown keys are
+        ignored, so the request succeeds and generates five seconds of defaults.
+
+        The two 3.0 video endpoints do not agree on where the prompt goes.
+        image-to-video takes a typed `contents` array, because it also has to carry
+        the start frame and the type is what distinguishes a first frame from an
+        Element reference. text-to-video has no image and keeps a top-level `prompt`
+        string. Putting a `contents` array on text-to-video, or a bare `prompt` on
+        image-to-video, is the silent-ignore failure this spec file exists to stop.
+        """
+        clause = spec.get("negative_clause", "")
+        if clause and not multi_shot:
+            # Negatives have no field of their own here; the prompt "can include
+            # positive and negative descriptions". Single-cut requests only -- see
+            # `negative_clause` in configs/kling_models.yaml for why a semicolon
+            # shot list does not get one.
+            text = f"{text} {clause}".strip()
+        self._check_prompt_limit(spec, model_id, text)
+
+        settings: dict = {
+            **(spec.get("settings_defaults") or {}),
+            # `multi_shot` defaults to TRUE on this API, so a single-cut request has
+            # to say false out loud. Left off, the model may cut the one shot into
+            # several -- and per_shot mode depends on one file being one cut.
+            "multi_shot": multi_shot,
+            spec.get("duration_param", "duration"): duration,
+        }
+        resolution = (spec.get("resolution_by_mode") or {}).get(self.settings.kling_mode)
+        if resolution:
+            settings["resolution"] = resolution
+        # Only where the endpoint has nothing to read it off. With a start frame the
+        # ratio comes from the image, and stating it again can only disagree.
+        if spec.get("sends_aspect_ratio", True):
+            settings["aspect_ratio"] = self._aspect_ratio(spec)
+
+        payload: dict = {}
+        if spec.get("prompt_format") == "contents":
+            contents: list[dict] = [{"type": "prompt", "text": text}]
+            if first_frame is not None:
+                contents.append(
+                    {
+                        "type": spec.get("first_frame_type", "first_frame"),
+                        "url": self.encode_image(first_frame),
+                    }
+                )
+            payload["contents"] = contents
+        else:
+            payload["prompt"] = text
+        payload["settings"] = settings
+        return payload
+
     def build_generate_payload(
         self, prompt: str, duration: float, first_frame: Path | None = None
     ) -> dict:
         spec, model_id = self._spec_for(first_frame)
+        if _is_v3(spec):
+            return self._build_v3_payload(
+                spec,
+                model_id,
+                prompt,
+                self._duration_seconds(spec, duration),
+                multi_shot=False,
+                first_frame=first_frame,
+            )
         payload: dict = {
             "model_name": model_id,
             "mode": self.settings.kling_mode,
@@ -344,12 +523,7 @@ class KlingVideoProvider(BaseVideoProvider):
         if first_frame is not None:
             self._attach_first_frame(spec, payload, first_frame)
         payload[spec["duration_param"]] = self._duration_string(spec, duration)
-        limit = int(spec.get("max_prompt_chars", 0))
-        if limit and len(prompt) > limit:
-            raise VideoProviderError(
-                f"prompt is {len(prompt)} characters, over {model_id}'s "
-                f"{limit}-character limit."
-            )
+        self._check_prompt_limit(spec, model_id, prompt)
         return payload
 
     def build_image_payload(
@@ -357,10 +531,10 @@ class KlingVideoProvider(BaseVideoProvider):
     ) -> dict:
         """A first frame. Optionally consistent with an anchor already generated.
 
-        When `reference` is given the prompt is prefixed with the endpoint's
-        reference token, because a reference image that is never addressed in the
-        prompt is weighted as loose style guidance rather than as the subject to
-        preserve -- which is precisely the identity drift this stage exists to stop.
+        `reference` goes in the `image` field as raw Base64. The image endpoint
+        documents no token addressing, so nothing is prefixed to the prompt --
+        `reference_token` stays supported in the spec file for an endpoint that
+        does, and is unset for this one.
         """
         spec = self.t2i
         if reference is not None:
@@ -389,28 +563,62 @@ class KlingVideoProvider(BaseVideoProvider):
             payload[param] = self.encode_image(reference)
         return payload
 
-    def format_semicolon_shots(self, shots: list[MotionShot]) -> str:
-        """The docs' prose form of a shot list: `shot n, m, words;` per cut.
+    def plan_shot_seconds(self, spec: dict, shots: list[MotionShot]) -> list[int]:
+        """Whole seconds per cut, summing to a total the endpoint will accept.
 
-        `n` is the 1-based shot number and `m` its duration in whole seconds. Kling
-        documents this for hand-written Omni prompts, where there is one `prompt`
-        field and no array to put a storyboard in.
+        Three constraints bind at once in a semicolon shot list: every `m` is at
+        least 1s, the sum of them must equal `settings.duration`, and that total
+        must sit inside the duration enum. Rounding each cut on its own satisfies
+        none of them -- a two-cut hook of 1.2s + 1.3s rounds to 1 + 1 = 2s, which
+        is under the 3s floor, and the request is rejected whole.
 
-        Not the default transport -- see `multi_shot_syntax` in
-        configs/kling_models.yaml for why. Kept because it is the only multi-shot
-        form available on a request that has no `multi_prompt` array, and because
-        the failure mode when it is wrong is silent: prose that does not parse as a
-        shot list becomes one long shot and the task still reports success.
+        Any deficit goes on the last cut rather than being spread across all of
+        them. Short-form pacing is front-loaded and the hook is first, so the
+        closing cut is the least visible place to put a second the timeline did not
+        ask for. `qc` measures the drift that results.
+        """
+        seconds = [int(self.shot_billed_duration(s.duration)) for s in shots]
+        total = sum(seconds)
+        deficit = int(spec.get("min_duration", 0)) - total
+        if deficit > 0:
+            seconds[-1] += deficit
+        ceiling = int(spec.get("max_duration", 0))
+        if ceiling and total > ceiling:
+            # Refused rather than trimmed: the caller packs windows against this
+            # same quantisation, so an overflow means a single cut is longer than a
+            # whole request can be, and dropping the excess would silently delete
+            # video that the storyboard asked for.
+            raise VideoProviderError(
+                f"the shot list totals {total}s, over the {ceiling}s a single "
+                "request can hold. Shorten the longest cut, or render with "
+                "render_mode=per_shot, where each cut is its own request."
+            )
+        return seconds
 
-        Semicolons inside a prompt are stripped rather than escaped. There is no
+    def format_semicolon_shots(
+        self, shots: list[MotionShot], seconds: list[int] | None = None
+    ) -> str:
+        """The documented form of a 3.0 shot list: `shot n, m, words;` per cut.
+
+        `n` is the 1-based shot number and `m` its duration in whole seconds. This
+        is not an alternative to a `multi_prompt` array on the 3.0 API -- it is the
+        only multi-shot form the API has, and the failure mode when it is malformed
+        is silent: prose that does not parse as a shot list becomes one long shot
+        and the task still reports success.
+
+        Semicolons inside a prompt are replaced rather than escaped. There is no
         documented escape, so a stray one would end the shot early and shift every
         cut after it.
         """
+        lengths = seconds if seconds is not None else [
+            int(self.shot_billed_duration(s.duration)) for s in shots
+        ]
         parts = []
-        for index, shot in enumerate(shots, start=1):
-            seconds = int(self.shot_billed_duration(shot.duration))
+        for index, (shot, length) in enumerate(
+            zip(shots, lengths, strict=True), start=1
+        ):
             words = shot.prompt.replace(";", ",").strip()
-            parts.append(f"shot {index}, {seconds}, {words}")
+            parts.append(f"shot {index}, {length}, {words}")
         return "; ".join(parts) + ";"
 
     def build_sequence_payload(
@@ -418,10 +626,27 @@ class KlingVideoProvider(BaseVideoProvider):
     ) -> dict:
         """Multi-shot storyboard, optionally anchored on a start frame.
 
-        `multi_shot` and `shot_type` must both be set for `multi_prompt` to be
-        read at all, and setting them makes the top-level `prompt` invalid.
+        On v3 the storyboard is the prompt: one text field holding
+        `shot n, m, words;` per cut, with `settings.multi_shot` on and
+        `settings.duration` equal to the sum of the shot durations.
+
+        On the legacy API it is an array instead, where `multi_shot` and
+        `shot_type` must both be set for `multi_prompt` to be read at all, and
+        setting them makes the top-level `prompt` invalid.
         """
         spec, model_id = self._spec_for(first_frame)
+        if _is_v3(spec):
+            seconds = self.plan_shot_seconds(spec, shots)
+            for index, shot in enumerate(shots, start=1):
+                self._check_shot_prompt(spec, model_id, index, shot.prompt)
+            return self._build_v3_payload(
+                spec,
+                model_id,
+                self.format_semicolon_shots(shots, seconds),
+                sum(seconds),
+                multi_shot=True,
+                first_frame=first_frame,
+            )
         payload: dict = {
             "model_name": model_id,
             "mode": self.settings.kling_mode,
@@ -459,19 +684,7 @@ class KlingVideoProvider(BaseVideoProvider):
                 value: str | float = str(int(billed))
             else:
                 value = round(billed, 2)
-            limit = int(spec.get("max_shot_prompt_chars", 0))
-            if limit and len(shot.prompt) > limit:
-                # Refused, not trimmed. The caller builds prompts to this budget
-                # already; if one arrives over it, something upstream changed and
-                # a silent trim would cut mid-clause -- handing the model half a
-                # sentence and charging for the result.
-                raise VideoProviderError(
-                    f"storyboard entry {index} is {len(shot.prompt)} characters, "
-                    f"over {model_id}'s {limit}-character limit for a shot "
-                    "prompt. Shorten the style keywords, or render with "
-                    "render_mode=per_shot, where the whole prompt goes in the "
-                    f"top-level field ({spec.get('max_prompt_chars', '?')} chars)."
-                )
+            self._check_shot_prompt(spec, model_id, index, shot.prompt)
             entry: dict = {"prompt": shot.prompt, "duration": value}
             if spec.get("multi_prompt_indexed"):
                 entry = {"index": index, **entry}
@@ -485,11 +698,8 @@ class KlingVideoProvider(BaseVideoProvider):
     def generate_image(
         self, prompt: str, out_path: Path, reference: Path | None = None
     ) -> Path:
-        path = self.t2i["path"]
-        task_id = self._submit(path, self.build_image_payload(prompt, reference))
-        return self._download(
-            self._poll(path, task_id, self.t2i["output_key"]), out_path
-        )
+        task_id = self._submit(self.t2i, self.build_image_payload(prompt, reference))
+        return self._download(self._poll(self.t2i, task_id), out_path)
 
     def generate(
         self,
@@ -499,13 +709,10 @@ class KlingVideoProvider(BaseVideoProvider):
         first_frame: Path | None = None,
     ) -> Path:
         spec, _ = self._spec_for(first_frame)
-        path = spec["path"]
         task_id = self._submit(
-            path, self.build_generate_payload(prompt, duration, first_frame)
+            spec, self.build_generate_payload(prompt, duration, first_frame)
         )
-        return self._download(
-            self._poll(path, task_id, spec["output_key"]), out_path
-        )
+        return self._download(self._poll(spec, task_id), out_path)
 
     def generate_sequence(
         self,
@@ -514,10 +721,5 @@ class KlingVideoProvider(BaseVideoProvider):
         first_frame: Path | None = None,
     ) -> Path:
         spec, _ = self._spec_for(first_frame)
-        path = spec["path"]
-        task_id = self._submit(
-            path, self.build_sequence_payload(shots, first_frame)
-        )
-        return self._download(
-            self._poll(path, task_id, spec["output_key"]), out_path
-        )
+        task_id = self._submit(spec, self.build_sequence_payload(shots, first_frame))
+        return self._download(self._poll(spec, task_id), out_path)

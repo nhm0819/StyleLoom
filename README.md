@@ -533,11 +533,11 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 | `STYLELOOM_LLM_PROVIDER` | `auto` | `auto` \| `mock` \| `anthropic` |
 | `STYLELOOM_LLM_MODEL` | `claude-sonnet-5` | |
 | `STYLELOOM_VIDEO_PROVIDER` | `auto` | `auto` \| `mock` \| `kling` |
-| `STYLELOOM_KLING_T2V_MODEL` | `kling-v3` | a `model_name` sent in the body, not a URL segment. Must be a key in `configs/kling_models.yaml`. `styleloom models` compares the alternatives |
-| `STYLELOOM_KLING_T2I_MODEL` | `kling-v3` | builds the first frame. `POST /v1/images/generations` |
-| `STYLELOOM_KLING_I2V_MODEL` | `kling-v3-omni` | animates it. Omni by default because its `image_list` carries a *typed* first frame |
-| `STYLELOOM_USE_FIRST_FRAME` | `true` | generate one anchor still per run and open every request on a frame derived from it. `false` drops the keyframe stage and renders from text |
-| `STYLELOOM_KLING_MODE` | `std` | `std` \| `pro`. The quality tier, which is a request field here rather than a separate endpoint |
+| `STYLELOOM_KLING_T2V_MODEL` | `kling-3.0` | `POST /text-to-video/kling-3.0`. Only reached when the first frame is off. Must be a key in `configs/kling_models.yaml`; `styleloom models` compares the alternatives |
+| `STYLELOOM_KLING_T2I_MODEL` | `kling-v3` | builds the first frame. `POST /v1/images/generations`, where the model *is* a `model_name` in the body |
+| `STYLELOOM_KLING_I2V_MODEL` | `kling-3.0` | `POST /image-to-video/kling-3.0`. The production path: it animates the frame t2i just built |
+| `STYLELOOM_USE_FIRST_FRAME` | `true` | generate one anchor still per run and open every request on a frame derived from it. `false` drops the keyframe stage and falls back to text-to-video |
+| `STYLELOOM_KLING_MODE` | `std` | `std` \| `pro`. The quality tier. On the 3.0 endpoints there is no `mode` field, so it maps onto `settings.resolution`: std 720p, pro 1080p |
 | `STYLELOOM_KLING_BASE_URL` | `https://api-singapore.klingai.com` | International account system. `api-beijing.klingai.com` is a different account, not a region |
 | `STYLELOOM_KLING_TIMEOUT_SEC` | `900` | Covers queue time as well as inference |
 | `STYLELOOM_KLING_POLL_INTERVAL_SEC` | `5` | Generation is asynchronous |
@@ -557,16 +557,36 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 Config files fall back to the copies bundled in the repo, so a fresh clone runs from
 any working directory.
 
-### The `KLING_*_MODEL` values are `model_name`s, not URL segments
+### The pipeline is text -> image -> video
 
-The official API has one path per capability and picks the model in the request
-body, so the setting is short and the path is a field in
-`configs/kling_models.yaml`:
+`brief` and `outline` produce the text, `keyframe` turns it into a still, and
+image-to-video animates that still. Text-to-video is the fallback for
+`STYLELOOM_USE_FIRST_FRAME=false` and nothing else, because a clip generated from
+text alone shares no identity with the clips around it.
+
+### The `KLING_*_MODEL` values are keys in the spec file, not always `model_name`s
+
+Where the model goes in the request depends on which API generation the entry
+speaks, and `api:` in `configs/kling_models.yaml` records which:
 
 ```
+# api: v3 -- the model is a URL segment and the body is contents/settings/options
+POST https://api-singapore.klingai.com/image-to-video/kling-3.0
+{"contents": [{"type": "prompt", "text": "..."},
+              {"type": "first_frame", "url": "<raw base64>"}],
+ "settings": {"duration": 6, "multi_shot": false, "resolution": "720p", "audio": "off"}}
+
+# no api key -- the legacy shape, one path per capability, model in the body
 POST https://api-singapore.klingai.com/v1/videos/image2video
 {"model_name": "kling-v3", "mode": "std", "image": "<raw base64>", ...}
 ```
+
+The two are not a rename. On the 3.0 endpoints `model_name`, `mode`,
+`negative_prompt` and a top-level `prompt`/`image`/`duration` are all *unknown
+keys*, and unknown keys are ignored rather than rejected — so a legacy-shaped
+request comes back `succeeded` having generated five seconds of defaults. That is
+why the shape is data with a per-entry `api` flag and why
+`test_kling_provider.py` asserts the envelope field by field.
 
 An unrecognised name fails at startup rather than at the first request, because
 the provider checks it against the registry before doing any work.
@@ -578,9 +598,9 @@ the provider checks it against the registry before doing any work.
 
 ```
 anchor    one still per run, from the cast creator + setting + grade
-   |      reference image, addressed as <<<image_1>>>
+   |      reference image, sent as raw base64 in `image`
 frames    one still per render request, derived from the anchor
-   |      first_frame
+   |      contents: [{"type": "first_frame", ...}]
 video     image-to-video, with multi_shot cutting inside each window
 ```
 
@@ -616,10 +636,10 @@ video calls. The removed design spent 20 image calls and 20 video calls and got 
 cross-cut identity for them. Text-to-video spends 0 and 3, and drifts between
 windows — `STYLELOOM_USE_FIRST_FRAME=false` returns to that.
 
-**Only the first entry in a window establishes the subject.** All six entries of
-a `multi_prompt` request are read by one generation, so repeating the presenter
-and the room in each of them spent 260 of the 512 characters an entry gets on
-something the model had already been told. Continuation entries say "same subject
+**Only the first entry in a window establishes the subject.** All six shots of
+one request are read by one generation, so repeating the presenter and the room in
+each of them spent 260 of the 512 characters a shot gets on something the model
+had already been told. Continuation entries say "same subject
 and location" and restate only the grade, which QC measures and which drifts if
 left unsaid.
 
@@ -629,36 +649,62 @@ heavily, and given up first because colour is what QC measures while identity is
 now partly held by the anchor. At a 120-character budget the tokens that survive
 are grade, saturation and contrast.
 
-**Prompts are budgeted, and the two limits are five times apart.** A top-level
-`prompt` takes ~2500 characters; a single entry inside `multi_prompt` takes 512.
-The provider refuses an over-length entry rather than trimming it.
+**Prompts are budgeted, and the two limits are six times apart.** The whole prompt
+field takes 3072 characters (2500 recommended); one shot's `words` inside a shot
+list takes 512. The provider refuses an over-length entry rather than trimming it —
+six shots at the limit is 3072+ characters, which is exactly why the ceiling in the
+spec file is the hard 3072 and not the recommended 2500.
 
-**`multi_prompt`, not the semicolon form.** Kling documents two ways to express a
-shot list and they are not interchangeable. `multi_prompt` is a JSON array of
-`{index, prompt, duration}` and is what both official curl examples send; the
-semicolon form (`"shot 1, 3, words; shot 2, 4, words;"`) is documented for
-hand-written Omni prompts, where there is one `prompt` field and no array. The array
-is the verified transport and is the default. `format_semicolon_shots` implements the
-other and `multi_shot_syntax` selects it, but it is marked unverified for a specific
-reason: the schema says `prompt` is invalid once `multi_shot` is true, no official
-example shows the semicolon string alongside those flags, and the failure is silent —
-prose that does not parse as a shot list becomes one long shot and the task reports
-success.
+**The shot list is the prompt.** On 3.0 there is no `multi_prompt` array and no
+`shot_type`; a storyboard is written into the prompt text itself:
+
+```
+shot 1, 3, wide establishing ... ; shot 2, 4, close up ... ;
+```
+
+`n` is the 1-based shot number and `m` its duration in whole seconds. Three
+constraints bind at once, and `plan_shot_seconds` exists because rounding each cut
+independently satisfies none of them: every `m` is at least 1s, **the sum of them
+must equal `settings.duration`**, and that total has to sit inside the 3–15s enum.
+A two-cut hook of 1.2s + 1.3s quantises to 1 + 1 = 2s, under the floor, and the
+request is rejected whole — so the deficit goes on the closing cut, where a
+stretched second is least visible, and `qc` measures the drift.
+
+`settings.multi_shot` also **defaults to true**, so a single-cut request has to send
+`false` out loud or the model is free to cut it into several — which `per_shot` mode,
+where one file is one cut, cannot survive.
+
+The failure mode throughout is silent: prose that does not parse as a shot list
+becomes one long shot and the task reports success. That is also why the negative
+clause goes only on single-cut prompts. There is no `negative_prompt` field on 3.0
+(the prompt "can include positive and negative descriptions"), and the shot-list
+format has no documented place for a global clause, so appending one around the
+list risks being read as a malformed shot. Multi-shot relies on the start frame
+instead, which `keyframe` generates asking for no text, no captions, no watermark.
 
 **Three endpoints, three paths.**
 
-| `model_name` | path | role |
+| spec key | path | role |
 |---|---|---|
-| `kling-v3` | `/v1/images/generations` | first frame |
-| `kling-v3-omni` | `/v1/videos/omni-video/` | image-to-video, typed `image_list` |
-| `kling-v3` | `/v1/videos/image2video/` | image-to-video, flat `image` |
-| `kling-v3` | `/v1/videos/text2video` | fallback when the frame is off |
+| `kling-v3` | `/v1/images/generations` | first frame (a real `model_name`) |
+| `kling-3.0` | `/image-to-video/kling-3.0` | **the production path**: animates that frame |
+| `kling-3.0` | `/text-to-video/kling-3.0` | fallback when the frame is off |
+| `kling-v3` / `kling-v3-omni` | `/v1/videos/*` | legacy, still selectable |
 
-The flat-versus-typed split is the one to get right. On omni a first frame goes in
-`image_list` as `{"type": "first_frame", ...}`; an untyped entry is accepted and
-billed as a style reference, the video does not start on the frame, and nothing in
-the response says so. Base64 goes in raw — a `data:image/png;base64,` prefix is a
-400.
+The two 3.0 video endpoints do not even agree with each other on where the prompt
+goes. image-to-video takes a typed `contents` array, because it also carries the
+start frame and the `type` is what separates a first frame from an Element
+reference. text-to-video has no image, so it keeps a top-level `prompt` string and
+is the only one of the two with `settings.aspect_ratio` — the other reads the ratio
+off the frame. Base64 goes in raw either way: a `data:image/png;base64,` prefix is
+a 400.
+
+Polling differs too, and this is the part that fails first rather than silently.
+The 3.0 endpoints share one task endpoint, `GET /tasks?task_ids=...`, which answers
+with a **list**, calls the field `status`, and says `succeeded`. The legacy ones
+answer on `GET {create path}/{id}` with a single object whose field is
+`task_status` and whose terminal value is `succeed`. The create response is
+`data.id` on 3.0 and `data.task_id` on legacy.
 
 ### What the move off fal cost, and what it bought
 
@@ -687,8 +733,9 @@ depend on a price list — and prints no currency figure rather than copying a
 reseller's rate:
 
 ```
-  model_name     floor    elo  per-shot (today)            multi_prompt
-* kling-v3          3s      -  42s billed  (75% wasted)    14s billed  (3 calls)
+  model_name     floor    elo  per-shot (today)            multi_shot
+* kling-3.0         3s      -  42s billed  (75% wasted)    14s billed  (3 calls)
+  kling-v3          3s      -  42s billed  (75% wasted)    14s billed  (3 calls)
   kling-v3-omni     3s      -  42s billed  (75% wasted)    14s billed  (3 calls)
 ```
 
@@ -711,7 +758,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-240 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+285 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting
@@ -721,12 +768,14 @@ diverging, both render modes producing the same shape of output, and failure
 isolating to the stage that broke.
 
 `test_kling_provider.py` asserts the payload *shape* per endpoint without a key
-or a network, because that is the part that breaks silently: `multi_shot` and
-`shot_type` must accompany `multi_prompt` or the storyboard is quietly one shot,
-the top-level `prompt` becomes invalid once they are set, shot entries are ordered
-by an `index` field rather than array position, and `duration` is a bare string.
-It also checks the hand-rolled JWT against an independently computed HMAC rather
-than against a stored token, so the test fails if the encoding drifts.
+or a network, because that is the part that breaks silently: the 3.0 envelope is
+`contents`/`settings` and every legacy field name is ignored rather than rejected,
+`multi_shot` is a boolean that defaults to true, `duration` is an int inside
+`settings` and must equal the sum of the shot durations, and the task is read from
+`/tasks` as a list whose terminal status is `succeeded`. The legacy shape is still
+asserted through `legacy_provider()`, since those endpoints remain selectable. It
+also checks the hand-rolled JWT against an independently computed HMAC rather than
+against a stored token, so the test fails if the encoding drifts.
 
 Regression tests exist for bugs found during development:
 

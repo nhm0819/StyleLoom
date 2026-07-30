@@ -6,7 +6,7 @@ cut, so a style with 1.2s cuts pays for 3-4s per shot and throws most of it away
 How much depends on the style's own shot count, which is why this reads a saved
 `style.json` rather than quoting a generic number.
 
-It also shows what `multi_prompt` would cost on endpoints that support it, since
+It also shows what `multi_shot` would cost on endpoints that support it, since
 that is the difference between paying for the footage you use and paying for the
 floor.
 
@@ -64,14 +64,18 @@ def multi_prompt_billed_sec(
       the delivered length -- multi_prompt removes the endpoint's 3s floor, not
       arithmetic.
     """
-    if "multi_prompt" not in (spec.get("capabilities") or []):
+    # Either transport counts: a `multi_prompt` array on the legacy endpoints, a
+    # semicolon shot list in the prompt on 3.0. The arithmetic is the same either
+    # way -- several cuts in one generation -- and gating on the array name alone
+    # reported "no saving available" for the endpoints the harness now defaults to.
+    if not ({"multi_prompt", "semicolon_prompt"} & set(spec.get("capabilities") or [])):
         return None
     window = float(spec.get("max_shot_window_sec") or spec.get("max_duration", total_sec))
     max_shots = int(spec.get("max_shots_per_request", 0))
 
     shot_sec = total_sec / max(shots, 1)
     billed_per_shot = shot_sec
-    if spec.get("multi_prompt_duration_type") == "integer_string":
+    if spec.get("api") == "v3" or spec.get("multi_prompt_duration_type") == "integer_string":
         billed_per_shot = max(1.0, float(round(shot_sec)))
     billed = shots * billed_per_shot
 
@@ -141,7 +145,7 @@ def models(
     width = max(len(r[0]) for r in rows)
     header = (
         f"  {'model_name':<{width}}  {'floor':>5}  {'elo':>5}  "
-        f"{'per-shot (today)':<26}  multi_prompt"
+        f"{'per-shot (today)':<26}  multi_shot"
     )
 
     typer.secho(header, bold=True)
@@ -160,7 +164,7 @@ def models(
         "\n  per-shot is what this repo does today: one generation per cut, billed at\n"
         "  the endpoint's minimum length. The wasted share is footage paid for and\n"
         "  trimmed off, because holding the reference's pacing matters more than the\n"
-        "  saving. multi_prompt carries several cuts in one request, which lowers\n"
+        "  saving. multi_shot carries several cuts in one request, which lowers\n"
         "  the floor from the endpoint's minimum to 1s per cut -- not to zero: the\n"
         "  per-shot duration is an integer, so a 0.76s cut is still billed as 1s and\n"
         "  delivered as 1s. On a style whose cuts run under a second that trades\n"

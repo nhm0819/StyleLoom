@@ -74,12 +74,15 @@ class Settings(BaseSettings):
     #
     # Three models because there are three endpoints. t2i builds the first frame,
     # i2v animates it, and t2v is only reached when `use_first_frame` is off.
-    kling_t2v_model: str = "kling-v3"
+    # Both default to the 3.0 entries in configs/kling_models.yaml. The legacy
+    # /v1/videos/* entries are still selectable for an account pinned to them.
+    kling_t2v_model: str = "kling-3.0"
     kling_t2i_model: str = "kling-v3"
-    # Omni by default, and this is the one non-obvious default in the file: it is
-    # the endpoint whose `image_list` carries a *typed* first frame, so a start
-    # frame is a start frame rather than a loose style reference.
-    kling_i2v_model: str = "kling-v3-omni"
+    # The 3.0 endpoint, whose `contents` list carries a *typed* first frame, so a
+    # start frame is a start frame rather than a loose style reference -- and whose
+    # request shape is the one verified against the current API reference. The
+    # legacy `kling-v3` / `kling-v3-omni` entries are still selectable.
+    kling_i2v_model: str = "kling-3.0"
 
     # Generate one anchor still per run and carry it into every render request.
     # This is what holds the presenter's face and the colour grade across cuts that

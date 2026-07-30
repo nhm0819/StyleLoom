@@ -34,6 +34,8 @@ from styleloom_core.providers.kling import (
 
 V3 = "kling-v3"
 OMNI = "kling-v3-omni"
+# The 3.0 API entry. A path segment rather than a `model_name`, unlike the two above.
+V3_API = "kling-3.0"
 
 
 def make_provider(**overrides) -> KlingVideoProvider:
@@ -48,13 +50,29 @@ def make_provider(**overrides) -> KlingVideoProvider:
     return KlingVideoProvider(Settings(**fields))
 
 
+def legacy_provider(**overrides) -> KlingVideoProvider:
+    """Pinned to the /v1/videos/* entries.
+
+    The legacy endpoints are still in the spec file for an account pinned to them,
+    so their payload shape is still asserted -- but it is no longer what a default
+    provider builds, and a test that wants the flat request has to ask for it.
+    """
+    return make_provider(kling_t2v_model=V3, kling_i2v_model=V3, **overrides)
+
+
 # --- spec file integrity --------------------------------------------------- #
 
 
 def test_every_t2v_spec_declares_the_fields_the_provider_reads():
     specs = load_kling_specs(Settings())
     for model_name, spec in specs["text_to_video"].items():
-        for key in ("path", "duration_param", "min_duration", "output_key"):
+        # On v3 the result is a typed `outputs` list, so `output_key` names nothing.
+        required = (
+            ("path", "task_path", "output_type", "duration_param", "min_duration")
+            if spec.get("api") == "v3"
+            else ("path", "duration_param", "min_duration", "output_key")
+        )
+        for key in required:
             assert key in spec, f"{model_name} is missing {key}"
 
 
@@ -113,17 +131,18 @@ def _unpad(segment: str) -> bytes:
 # --- keyframe payload ------------------------------------------------------ #
 
 
-def test_keyframe_asks_for_a_vertical_ratio_not_a_pixel_size():
-    """The official image API has no width/height, only a ratio enum."""
+def test_a_vertical_ratio_is_asked_for_rather_than_a_pixel_size():
+    """The API has no width/height, only a ratio enum. On 3.0 it lives inside
+    `settings`; at the top level it is ignored."""
     payload = make_provider().build_generate_payload("a face", 3.0)
-    assert payload["aspect_ratio"] == "9:16"
+    assert payload["settings"]["aspect_ratio"] == "9:16"
     assert "width" not in payload and "height" not in payload
-    assert payload["model_name"] == V3
+    assert "aspect_ratio" not in payload
 
 
 def test_landscape_settings_pick_a_landscape_ratio():
     payload = make_provider(width=1920, height=1080).build_generate_payload("x", 3.0)
-    assert payload["aspect_ratio"] == "16:9"
+    assert payload["settings"]["aspect_ratio"] == "16:9"
 
 
 def test_an_unusual_size_snaps_to_the_nearest_legal_ratio():
@@ -134,8 +153,21 @@ def test_an_unusual_size_snaps_to_the_nearest_legal_ratio():
 # --- animate payload ------------------------------------------------------- #
 
 
-def test_generate_uses_the_official_parameter_names():
+def test_text_to_video_keeps_a_top_level_prompt_string():
+    """The two 3.0 video endpoints disagree on where the prompt goes: image-to-video
+    takes a typed `contents` array because it also carries the start frame, and
+    text-to-video, having no image, keeps a `prompt` string. A `contents` array sent
+    here is ignored and the task fails on a missing prompt."""
     payload = make_provider().build_generate_payload("she smiles", 1.0)
+    assert payload["prompt"].startswith("she smiles")
+    assert "contents" not in payload
+    assert set(payload) == {"prompt", "settings"}
+    for gone in ("model_name", "mode", "duration", "aspect_ratio", "negative_prompt"):
+        assert gone not in payload
+
+
+def test_the_legacy_endpoint_still_builds_the_flat_request():
+    payload = legacy_provider().build_generate_payload("she smiles", 1.0)
     assert payload["model_name"] == V3
     assert payload["mode"] == "std"
     assert payload["prompt"] == "she smiles"
@@ -146,20 +178,21 @@ def test_generate_uses_the_official_parameter_names():
 
 def test_duration_is_a_bare_string_at_or_above_the_floor():
     """A 0.76s cut cannot be bought; the endpoint floor is what gets billed."""
-    payload = make_provider().build_generate_payload("p", 0.76)
+    payload = legacy_provider().build_generate_payload("p", 0.76)
     assert payload["duration"] == "3"
     assert isinstance(payload["duration"], str)
 
 
 def test_duration_is_capped_at_the_endpoint_maximum():
     payload = make_provider().build_generate_payload("p", 99.0)
-    assert payload["duration"] == "15"
+    assert payload["settings"]["duration"] == 15
 
 
 def test_audio_is_off_by_default():
     """Captions are burned in and the reference set has no dialogue, so audio is
-    a surcharge for something the output discards."""
-    assert make_provider().build_generate_payload("p", 3.0)["sound"] == "off"
+    a surcharge for something the output discards. `sound` was the legacy name."""
+    assert make_provider().build_generate_payload("p", 3.0)["settings"]["audio"] == "off"
+    assert legacy_provider().build_generate_payload("p", 3.0)["sound"] == "off"
 
 
 
@@ -170,7 +203,7 @@ def test_audio_is_off_by_default():
 def test_sequence_sets_the_two_flags_that_make_multi_prompt_readable():
     """`multi_prompt` alone is ignored: without `multi_shot` and `shot_type` the
     request is a single shot and nothing says so."""
-    payload = make_provider().build_sequence_payload(
+    payload = legacy_provider().build_sequence_payload(
         [MotionShot("a", 1.0), MotionShot("b", 2.0)]
     )
     assert payload["multi_shot"] == "true"
@@ -181,12 +214,12 @@ def test_sequence_sets_the_two_flags_that_make_multi_prompt_readable():
 def test_sequence_drops_the_top_level_prompt():
     """The schema makes `prompt` invalid once multi_shot is on. Leaving it in is
     how a storyboard silently collapses to one shot."""
-    assert "prompt" not in make_provider().build_sequence_payload([MotionShot("a", 1.0)])
+    assert "prompt" not in legacy_provider().build_sequence_payload([MotionShot("a", 1.0)])
 
 
 def test_shot_entries_are_indexed_from_one():
     """Kling orders the storyboard by `index`, not by array position."""
-    payload = make_provider().build_sequence_payload(
+    payload = legacy_provider().build_sequence_payload(
         [MotionShot("a", 1.0), MotionShot("b", 1.0), MotionShot("c", 1.0)]
     )
     assert [e["index"] for e in payload["multi_prompt"]] == [1, 2, 3]
@@ -195,14 +228,14 @@ def test_shot_entries_are_indexed_from_one():
 def test_sub_second_cuts_are_billed_and_delivered_at_one_second():
     """Per-shot duration is an integer with a floor of 1, so a 0.4s cut has no
     legal representation. qc reports the drift rather than this hiding it."""
-    payload = make_provider().build_sequence_payload([MotionShot("a", 0.4)])
+    payload = legacy_provider().build_sequence_payload([MotionShot("a", 0.4)])
     assert payload["multi_prompt"][0]["duration"] == "1"
 
 
 def test_half_seconds_round_up_not_to_even():
     """floor(x + 0.5), not round(): Python's round(2.5) is 2, which would quietly
     lose half a second off every 2.5s cut."""
-    payload = make_provider().build_sequence_payload([MotionShot("a", 2.5)])
+    payload = legacy_provider().build_sequence_payload([MotionShot("a", 2.5)])
     assert payload["multi_prompt"][0]["duration"] == "3"
 
 
@@ -238,7 +271,7 @@ def test_concurrency_comes_from_settings_not_the_spec():
 def test_per_shot_never_buys_a_clip_shorter_than_the_cut(wanted):
     """`render_shot` trims a long clip down and cannot extend a short one, so
     rounding down leaves the timeline quietly short with nothing to notice it."""
-    sent = float(make_provider().build_generate_payload("p", wanted)["duration"])
+    sent = make_provider().build_generate_payload("p", wanted)["settings"]["duration"]
     assert sent >= wanted
 
 
@@ -246,13 +279,13 @@ def test_per_shot_rounds_up_rather_than_to_nearest():
     """4.4s asked for as 4s was a real bug: the clip came back 0.4s short and
     passed straight through, because the trim only fires when the clip is long."""
     payload = make_provider().build_generate_payload("p", 4.4)
-    assert payload["duration"] == "5"
+    assert payload["settings"]["duration"] == 5
 
 
 def test_multi_shot_rounds_to_nearest_not_up():
     """The opposite rule, on purpose. A multi-shot clip is never trimmed, so
     rounding up would stretch every video; nearest minimises total drift."""
-    payload = make_provider().build_sequence_payload(
+    payload = legacy_provider().build_sequence_payload(
         [MotionShot("a", 4.4), MotionShot("b", 4.6)]
     )
     assert [e["duration"] for e in payload["multi_prompt"]] == ["4", "5"]
@@ -261,7 +294,7 @@ def test_multi_shot_rounds_to_nearest_not_up():
 def test_the_payload_and_the_planner_agree_on_shot_length():
     """`split_windows` packs against `shot_billed_duration`. If the payload
     rounded differently the request would overflow the window just verified."""
-    provider = make_provider()
+    provider = legacy_provider()
     shots = [MotionShot("a", 0.4), MotionShot("b", 2.5), MotionShot("c", 4.4)]
     payload = provider.build_sequence_payload(shots)
     assert [float(e["duration"]) for e in payload["multi_prompt"]] == [
@@ -293,9 +326,17 @@ def test_every_new_spec_declares_the_fields_the_provider_reads():
     for spec in specs["text_to_image"].values():
         for key in ("path", "output_key", "reference_param"):
             assert key in spec
-    for spec in specs["image_to_video"].values():
-        for key in ("path", "first_frame_param", "duration_param", "output_key"):
-            assert key in spec
+    for model_name, spec in specs["image_to_video"].items():
+        # Two API generations, two sets of required keys. On v3 the start frame is
+        # a typed entry in `contents` and the result is a typed `outputs` list, so
+        # `first_frame_param` and `output_key` have nothing to name.
+        required = (
+            ("path", "task_path", "output_type", "duration_param", "min_duration")
+            if spec.get("api") == "v3"
+            else ("path", "first_frame_param", "duration_param", "output_key")
+        )
+        for key in required:
+            assert key in spec, f"{model_name} is missing {key}"
 
 
 def test_an_unknown_i2v_model_fails_on_construction():
@@ -321,13 +362,16 @@ def test_a_reference_is_raw_base64_with_no_data_uri_prefix(tmp_path):
     assert not payload["image"].startswith("data:")
 
 
-def test_a_reference_is_addressed_in_the_prompt(tmp_path):
-    """An unaddressed reference image is weighted as loose style guidance rather
-    than as the subject to preserve, which is the drift this stage exists to stop."""
+def test_a_reference_is_not_prefixed_with_an_undocumented_token(tmp_path):
+    """`<<<image_1>>>` was prepended here, and /v1/images/generations documents no
+    token addressing of any kind -- the reference is the `image` field. So the
+    prefix addressed nothing and put twelve literal characters at the front of the
+    prompt, where the model weights most heavily."""
     ref = tmp_path / "anchor.jpg"
     ref.write_bytes(b"x")
     payload = make_provider().build_image_payload("wider angle", ref)
-    assert payload["prompt"].startswith("<<<image_1>>>")
+    assert payload["prompt"] == "wider angle"
+    assert payload["image"]
 
 
 # --- first frame: video payload -------------------------------------------- #
@@ -344,7 +388,8 @@ def test_omni_carries_the_first_frame_as_a_typed_list_entry(tmp_path):
     untyped entry is accepted and billed, the video does not start on the frame,
     and nothing in the response says so."""
     frame = _frame(tmp_path)
-    payload = make_provider().build_generate_payload("she smiles", 3.0, frame)
+    provider = make_provider(kling_i2v_model=OMNI)
+    payload = provider.build_generate_payload("she smiles", 3.0, frame)
     assert payload["model_name"] == OMNI
     entry = payload["image_list"][0]
     assert entry["type"] == "first_frame"
@@ -362,33 +407,42 @@ def test_the_non_omni_endpoint_takes_a_flat_base64_field(tmp_path):
 
 
 def test_a_request_with_a_start_frame_states_no_aspect_ratio(tmp_path):
-    """The endpoint reads the ratio off the image. Sending one can only disagree
-    with the frame that was just uploaded."""
+    """The endpoint reads the ratio off the image, and has no `aspect_ratio` field
+    at all. Sending one can only disagree with the frame that was just uploaded.
+
+    Checked inside `settings` as well as at the top level: this test passed while
+    the ratio was being sent one level down, because 3.0 moved the field there.
+    """
     payload = make_provider().build_generate_payload("p", 3.0, _frame(tmp_path))
     assert "aspect_ratio" not in payload
+    assert "aspect_ratio" not in payload["settings"]
 
 
 def test_no_start_frame_still_states_the_ratio():
-    """The other half of the rule: text2video has nothing to read it off."""
-    assert "aspect_ratio" in make_provider().build_generate_payload("p", 3.0)
+    """The other half of the rule: text-to-video has nothing to read it off, and
+    `aspect_ratio` is a field on that endpoint only."""
+    payload = make_provider().build_generate_payload("p", 3.0)
+    assert "aspect_ratio" in payload["settings"]
 
 
 def test_a_storyboard_can_be_anchored_and_still_be_a_storyboard(tmp_path):
-    """Both mechanisms at once, which is the whole point: multi_prompt holds
+    """Both mechanisms at once, which is the whole point: the shot list holds
     identity within one generation and the frame holds it between them."""
     payload = make_provider().build_sequence_payload(
         [MotionShot("a", 1.0), MotionShot("b", 2.0)], _frame(tmp_path)
     )
-    assert payload["multi_shot"] == "true"
-    assert len(payload["multi_prompt"]) == 2
-    assert payload["image_list"][0]["type"] == "first_frame"
+    assert payload["settings"]["multi_shot"] is True
+    types = [c["type"] for c in payload["contents"]]
+    assert types == ["prompt", "first_frame"]
+    assert payload["contents"][0]["text"] == "shot 1, 1, a; shot 2, 2, b;"
 
 
 def test_the_render_spec_follows_the_first_frame_setting():
     """Capability properties have to describe the endpoint that will actually be
     called, or the caller budgets prompts and packs windows against another one."""
-    assert make_provider().render_id == OMNI
-    assert make_provider(use_first_frame=False).render_id == V3
+    assert make_provider().render_id == V3_API
+    assert make_provider().render["path"] == "/image-to-video/kling-3.0"
+    assert make_provider(use_first_frame=False).render["path"] == "/text-to-video/kling-3.0"
 
 
 # --- semicolon shot syntax ------------------------------------------------- #
@@ -409,15 +463,177 @@ def test_a_semicolon_inside_a_prompt_is_neutralised():
     assert text == "shot 1, 1, a, b;"
 
 
-def test_semicolon_mode_sends_one_prompt_and_no_array(tmp_path):
-    """The two would be two different shot lists in one request."""
-    provider = make_provider()
-    # Patched on the i2v spec, and a frame is passed, because that is the pairing
-    # the semicolon syntax is declared on -- `_spec_for(None)` would read t2v.
-    provider.i2v = {**provider.i2v, "multi_shot_syntax": "semicolon_prompt"}
-    payload = provider.build_sequence_payload(
-        [MotionShot("a", 1.0), MotionShot("b", 1.0)], _frame(tmp_path)
+def test_a_v3_sequence_carries_the_shot_list_in_the_prompt_and_no_array(tmp_path):
+    """On the 3.0 API the semicolon list is not an opt-in alternative to
+    `multi_prompt` -- it is the only multi-shot form the API has."""
+    payload = make_provider().build_sequence_payload(
+        [MotionShot("a", 1.0), MotionShot("b", 2.0)], _frame(tmp_path)
     )
     assert "multi_prompt" not in payload
-    assert payload["prompt"] == "shot 1, 1, a; shot 2, 1, b;"
-    assert payload["image_list"][0]["type"] == "first_frame"
+    assert payload["contents"][0]["text"] == "shot 1, 1, a; shot 2, 2, b;"
+
+
+# --- the 3.0 request envelope ---------------------------------------------- #
+#
+# The whole reason these assertions exist: the legacy request is not rejected by
+# the 3.0 endpoint, it is *ignored*. Unknown keys are dropped, `contents` is
+# missing, and the task fails on a missing prompt or succeeds on five seconds of
+# defaults. Nothing in the response names the fields that went nowhere.
+
+
+def test_the_v3_request_is_contents_and_settings_and_nothing_flat(tmp_path):
+    payload = make_provider().build_generate_payload("she smiles", 6.0, _frame(tmp_path))
+    assert set(payload) == {"contents", "settings"}
+    for gone in ("model_name", "mode", "prompt", "image", "duration", "aspect_ratio"):
+        assert gone not in payload, f"{gone} is a legacy field, silently ignored on 3.0"
+
+
+def test_the_v3_prompt_and_frame_are_typed_entries_in_contents(tmp_path):
+    frame = _frame(tmp_path)
+    contents = make_provider().build_generate_payload("she smiles", 3.0, frame)["contents"]
+    assert contents[0]["type"] == "prompt"
+    assert contents[0]["text"].startswith("she smiles")
+    assert contents[1]["type"] == "first_frame"
+    assert contents[1]["url"] == base64.b64encode(frame.read_bytes()).decode()
+    assert not contents[1]["url"].startswith("data:")
+
+
+def test_v3_duration_is_an_int_inside_settings(tmp_path):
+    """A bare string was right for the legacy `duration` field and is the wrong
+    type here, where the schema is an int enum."""
+    settings = make_provider().build_generate_payload("p", 6.0, _frame(tmp_path))["settings"]
+    assert settings["duration"] == 6
+    assert isinstance(settings["duration"], int)
+
+
+def test_a_single_cut_v3_request_turns_multi_shot_off_explicitly(tmp_path):
+    """`multi_shot` defaults to TRUE on this API. Left unsaid, the model may cut
+    one shot into several -- and per_shot mode trims one file as one cut."""
+    settings = make_provider().build_generate_payload("p", 3.0, _frame(tmp_path))["settings"]
+    assert settings["multi_shot"] is False
+
+
+def test_v3_audio_is_off_and_no_negative_prompt_is_sent(tmp_path):
+    """`sound` and `negative_prompt` are legacy names. The audio switch is
+    `settings.audio`; the negative field does not exist at all."""
+    payload = make_provider().build_generate_payload("p", 3.0, _frame(tmp_path))
+    assert payload["settings"]["audio"] == "off"
+    assert "sound" not in payload["settings"]
+    assert "negative_prompt" not in payload["settings"]
+
+
+def test_the_quality_tier_becomes_a_resolution_because_mode_does_not_exist(tmp_path):
+    """`mode` is not a field on 3.0, so std/pro would have silently done nothing.
+    It means what it always meant: std renders 720p, pro 1080p."""
+    frame = _frame(tmp_path)
+    std = make_provider().build_generate_payload("p", 3.0, frame)
+    pro = make_provider(kling_mode="pro").build_generate_payload("p", 3.0, frame)
+    assert std["settings"]["resolution"] == "720p"
+    assert pro["settings"]["resolution"] == "1080p"
+
+
+def test_the_v3_total_duration_equals_the_sum_of_the_shot_durations(tmp_path):
+    """The documented constraint on a shot list, and the one most likely to be
+    missed: `settings.duration` was not sent at all, so a 12s storyboard would
+    have been rendered as 5s of default."""
+    shots = [MotionShot("a", 3.0), MotionShot("b", 4.0), MotionShot("c", 2.0)]
+    payload = make_provider().build_sequence_payload(shots, _frame(tmp_path))
+    assert payload["contents"][0]["text"].startswith("shot 1, 3, a; shot 2, 4, b;")
+    assert payload["settings"]["duration"] == 9
+
+
+def test_a_short_shot_list_is_lifted_to_the_duration_floor(tmp_path):
+    """Two sub-second cuts quantise to 1 + 1 = 2s, under the 3s floor, and the
+    endpoint rejects the request whole. The deficit lands on the closing cut."""
+    payload = make_provider().build_sequence_payload(
+        [MotionShot("a", 1.2), MotionShot("b", 1.3)], _frame(tmp_path)
+    )
+    assert payload["settings"]["duration"] == 3
+    assert payload["contents"][0]["text"] == "shot 1, 1, a; shot 2, 2, b;"
+
+
+def test_a_shot_list_longer_than_one_request_is_refused_not_truncated(tmp_path):
+    """Silently dropping the overflow would delete video the storyboard asked for."""
+    with pytest.raises(VideoProviderError, match="over the 15s"):
+        make_provider().build_sequence_payload(
+            [MotionShot("a", 20.0)], _frame(tmp_path)
+        )
+
+
+def test_the_negative_clause_goes_in_the_prompt_on_single_cut_requests(tmp_path):
+    """There is no negative_prompt field on 3.0 -- the prompt itself carries
+    negative descriptions, so the clause has to be inside the text or nowhere."""
+    payload = make_provider().build_generate_payload("she smiles", 3.0, _frame(tmp_path))
+    assert "captions" in payload["contents"][0]["text"]
+
+
+def test_the_negative_clause_stays_out_of_a_semicolon_shot_list(tmp_path):
+    """The documented form is `shot n, m, words;` with no place for a global clause.
+    Prose before the list or after the final semicolon may parse as a malformed
+    shot, which collapses the storyboard to one long cut and still reports success.
+    Multi-shot relies on the start frame instead, which `keyframe` generates asking
+    for no text, no captions and no watermark."""
+    text = make_provider().build_sequence_payload(
+        [MotionShot("a", 2.0), MotionShot("b", 2.0)], _frame(tmp_path)
+    )["contents"][0]["text"]
+    assert text == "shot 1, 2, a; shot 2, 2, b;"
+    assert text.endswith(";")
+
+
+def test_text_to_video_carries_a_shot_list_the_same_way():
+    """One shot-list syntax across both 3.0 video endpoints; only the field the
+    prompt sits in differs."""
+    payload = make_provider().build_sequence_payload(
+        [MotionShot("wide", 2.0), MotionShot("close", 3.0)]
+    )
+    assert payload["prompt"] == "shot 1, 2, wide; shot 2, 3, close;"
+    assert payload["settings"]["duration"] == 5
+    assert payload["settings"]["multi_shot"] is True
+
+
+# --- the 3.0 task endpoint ------------------------------------------------- #
+
+
+def test_v3_reads_the_task_id_from_data_id_not_data_task_id():
+    """`data.task_id` is the legacy key. Missing it aborts a task that was
+    created and will be billed regardless."""
+    provider = make_provider()
+    body = {"code": 0, "data": {"id": "893605946402811985", "status": "submitted"}}
+    assert provider._task_record(provider.i2v, {"data": [body["data"]]}, "893605946402811985")
+
+
+def test_v3_polling_finds_the_task_in_a_list_response():
+    """/tasks answers with a list even for one id."""
+    provider = make_provider()
+    body = {"data": [{"id": "1", "status": "processing"}, {"id": "2", "status": "succeeded"}]}
+    assert provider._task_record(provider.i2v, body, "2")["status"] == "succeeded"
+
+
+def test_v3_polling_treats_a_missing_record_as_not_yet_rather_than_an_error():
+    """The list can be empty for a moment after submission; an empty dict has no
+    terminal status, so the loop simply polls again."""
+    provider = make_provider()
+    assert provider._task_record(provider.i2v, {"data": []}, "7") == {}
+
+
+def test_v3_takes_the_url_from_the_typed_outputs_list():
+    """`task_result.videos[]` is the legacy shape. On 3.0 the results are a typed
+    list, and `watermark_url` sits beside `url` on the same entry."""
+    provider = make_provider()
+    task = {
+        "outputs": [
+            {"type": "image", "url": "https://example.com/frame.png"},
+            {
+                "type": "video",
+                "url": "https://example.com/clip.mp4",
+                "watermark_url": "https://example.com/wm.mp4",
+            },
+        ]
+    }
+    assert provider._result_url(provider.i2v, task) == "https://example.com/clip.mp4"
+
+
+def test_the_legacy_response_shape_still_reads():
+    provider = make_provider(kling_i2v_model=OMNI)
+    task = {"task_result": {"videos": [{"url": "https://example.com/legacy.mp4"}]}}
+    assert provider._result_url(provider.i2v, task) == "https://example.com/legacy.mp4"
