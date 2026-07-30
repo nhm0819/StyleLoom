@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..events import EventKind
 from ..media import probe_video
 from ..schema import (
     AssembleResult,
@@ -43,12 +44,32 @@ TOLERANCES = {
 }
 
 
-def tolerance_for(name: str, target: float) -> float:
-    """Tolerance for one check, scaled to the target where the check is a duration."""
-    if name in RELATIVE_TOLERANCES:
-        fraction, floor = RELATIVE_TOLERANCES[name]
-        return round(max(floor, abs(target) * fraction), 3)
-    return TOLERANCES[name]
+def tolerance_for(name: str, target: float, min_cut: float = 0.0) -> float:
+    """Tolerance for one check, scaled to the target where the check is a duration.
+
+    `min_cut` is the shortest cut the render endpoint can produce, and it only
+    matters for `avg_shot_sec`. Short-form references cut faster than any current
+    image-to-video endpoint will render: the bundled reference runs 0.76s cuts
+    against a 1s floor, so the closest achievable average is already 31% off and a
+    15% tolerance fails a storyboard that did everything right.
+
+    Widening the tolerance for every style would make the check meaningless for the
+    ones that are not near the floor, so the tolerance widens by exactly the
+    unavoidable gap and keeps its normal band on top of it. A style whose cuts are
+    longer than the floor is measured as strictly as before, and a run that drifts
+    beyond what the floor forces still fails.
+
+    Accepting the floor is not the same as reproducing the pacing, so when this
+    widening applies the run says so rather than passing quietly -- see the warning
+    `qc` emits.
+    """
+    if name not in RELATIVE_TOLERANCES:
+        return TOLERANCES[name]
+    fraction, floor = RELATIVE_TOLERANCES[name]
+    band = max(floor, abs(target) * fraction)
+    if name == "avg_shot_sec" and min_cut > target:
+        band = max(band, (min_cut - target) + min_cut * fraction)
+    return round(band, 3)
 
 
 def cut_drift(requested: list[float], detected: list[float]) -> float:
@@ -95,9 +116,28 @@ def qc(ctx: Context, session: RunSession) -> QCReport:
     hook_shots = float(len([s for s in board.shots if s.role == "hook"]))
     drift = cut_drift(rendered.cut_timeline(), m["cuts"])
 
+    # The endpoint's floor, asked for the same way the storyboard asks: the
+    # quantiser applied to a duration small enough that any grid rounds it up.
+    min_cut = ctx.video.shot_billed_duration(1e-6)
+
+    if min_cut > style.pacing.avg_shot_sec:
+        ctx.emit(
+            EventKind.WARNING,
+            session.run_id,
+            stage="qc",
+            message=(
+                f"the reference cuts every {style.pacing.avg_shot_sec:.2f}s and the "
+                f"render endpoint cannot produce a cut shorter than {min_cut:.0f}s, "
+                f"so the closest achievable average is {min_cut:.2f}s "
+                f"({(min_cut / style.pacing.avg_shot_sec - 1) * 100:.0f}% slower). "
+                "The avg_shot_sec tolerance is widened by that much -- the check "
+                "passing does not mean the pacing was reproduced."
+            ),
+        )
+
     checks = [
         check("avg_shot_sec", style.pacing.avg_shot_sec, m["avg_shot_sec"],
-              tolerance_for("avg_shot_sec", style.pacing.avg_shot_sec)),
+              tolerance_for("avg_shot_sec", style.pacing.avg_shot_sec, min_cut)),
         check("total_duration", style.total_duration, m["duration"],
               tolerance_for("total_duration", style.total_duration)),
         check("saturation", style.look.saturation, m["saturation"],

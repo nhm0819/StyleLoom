@@ -18,6 +18,7 @@ the grade has drifted. See docs/TOOL_RATIONALE.md.
 from __future__ import annotations
 
 import hashlib
+import math
 from pathlib import Path
 
 from ..config import Settings
@@ -97,6 +98,22 @@ class MockVideoProvider(BaseVideoProvider):
         # No real limit offline; matches the common endpoint ceiling so offline
         # runs split into the same number of windows a real one would.
         return 15.0
+
+    def shot_billed_duration(self, seconds: float) -> float:
+        """Whole seconds, minimum one -- the same grid the real endpoints impose.
+
+        ffmpeg renders any length, so offline this could be the identity. It is not,
+        for the third time in this class and the same reason as the prompt limit and
+        the shot cap above: a constraint the offline provider does not declare is a
+        constraint nothing exercises until a paid run.
+
+        This one matters more than the others because the storyboard now *plans*
+        against it. A reference cut of 0.76s cannot be rendered, so the storyboard
+        asks for 1s and the pacing moves away from the reference by 31%. That is a
+        real cost of a real limit, and QC has to be able to see it -- with the
+        identity here it would score a timeline no endpoint can deliver.
+        """
+        return float(max(1, math.floor(seconds + 0.5)))
 
     @property
     def max_shots_per_request(self) -> int:

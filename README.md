@@ -411,8 +411,8 @@ verifier can be wrong on its own.
 
 | Check | Target | Tolerance |
 |---|---|---|
-| `avg_shot_sec` | `style.pacing.avg_shot_sec` | ±0.6s |
-| `total_duration` | `style.total_duration` | ±6.0s |
+| `avg_shot_sec` | `style.pacing.avg_shot_sec` | 15% of target, plus the endpoint's cut floor where it binds |
+| `total_duration` | `style.total_duration` | 10% of target |
 | `saturation` / `contrast` / `warmth` | `style.look` | ±0.18 / ±0.20 / ±0.12 |
 | `hook_window_shots` | `style.hook_style.cut_count` | ±0.5 |
 | `cut_timing_drift` | 0 — requested cuts vs cuts actually present | ±0.35s |
@@ -779,7 +779,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-277 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+281 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting
@@ -990,6 +990,9 @@ Two alternatives, neither needed if the above works:
   `avg_shot_sec` allows 15% of the style's own value and `total_duration` 10%,
   because a fixed second means something different at 7s and at 60s. The colour
   tolerances stay absolute: a saturation delta reads the same at any length.
+  `avg_shot_sec` widens further where the render endpoint's cut floor is above the
+  reference's own pacing, by exactly that gap — a style above the floor is still
+  measured at 15%, and the run warns that a pass there is not a reproduction.
 - **Kling endpoint schemas are pinned to July 2026, and some fields are
   inferred.** They are data (`configs/kling_models.yaml`), not code, but they do go
   stale — if a request starts failing on a parameter name, check the docs before

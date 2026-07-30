@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..budget import BODY_MOTION, HOOK_MOTION, look_tokens, plan_shot_text, style_tokens
@@ -25,6 +26,15 @@ if TYPE_CHECKING:
     from ..session import RunSession
 
 MIN_AVG_SHOT_SEC = 0.3
+
+# A duration small enough that any real grid rounds it up to one unit, and that a
+# provider stating no grid returns unchanged. Used to ask a quantiser what its
+# smallest renderable cut is without adding a second method to the interface.
+_TINY = 1e-6
+
+# What `shot_billed_duration` is, seen from here: a function that maps a wanted cut
+# length onto one the endpoint will actually run.
+Quantiser = Callable[[float], float]
 
 
 def ensure_distinct_frames(shots: list[Shot]) -> list[Shot]:
@@ -63,6 +73,60 @@ def shot_count_for(beat_sec: float, avg_shot_sec: float) -> int:
     ideal = beat_sec / target
     candidates = {max(1, math.floor(ideal)), max(1, math.ceil(ideal))}
     return min(candidates, key=lambda n: abs(beat_sec / n - target))
+
+
+def whole_spans(spans: list[float], quantise: Quantiser) -> list[float]:
+    """Snap a sequence of spans onto the endpoint's grid, carrying the error forward.
+
+    Rounding each span on its own accumulates: three beats each rounded up by 0.4s
+    make the video 1.2s long, and the total runtime is one of the properties being
+    reproduced. Diffusing the error means a beat that rounded up makes the next one
+    round down, so the sum stays within half a unit of the target however many beats
+    there are.
+    """
+    out: list[float] = []
+    carry = 0.0
+    for span in spans:
+        wanted = span + carry
+        snapped = quantise(wanted)
+        carry = wanted - snapped
+        out.append(snapped)
+    return out
+
+
+def cut_plan(
+    span: float, quantise: Quantiser, count: int = 0, avg: float = 0.0
+) -> list[float]:
+    """Cut lengths covering `span` that the endpoint can render exactly.
+
+    The storyboard used to divide a span evenly and hand over whatever came out --
+    0.76s cuts against an endpoint whose shortest renderable cut is 1s. Nothing
+    rejected that: the request quantised silently, so the delivered video ran ~40%
+    longer than the storyboard and the drift only showed up in QC on a paid run.
+
+    So the division happens on the endpoint's grid. Every returned length is a
+    multiple of the smallest renderable cut, which makes it a fixed point of
+    `shot_billed_duration` -- what is asked for is what is billed and what is
+    delivered.
+
+    The pacing cost is real and is not hidden: on a reference whose cuts run 0.76s
+    the plan plays them at 1s, 31% slower, and QC's `avg_shot_sec` check reports it
+    against a tolerance that knows about the floor.
+
+    `count` fixes the number of cuts, for a hook window whose cut count the style
+    declares; otherwise `avg` picks it. Either way the count is capped at what the
+    span can hold, since a 3s window cannot hold four 1s cuts.
+    """
+    unit = quantise(_TINY)
+    n = count or shot_count_for(span, avg)
+    if unit <= _TINY:
+        # The endpoint states no grid, so there is nothing to snap to.
+        n = max(1, n)
+        return [round(span / n, 2)] * n
+    units = max(int(round(span / unit)), 1)
+    n = max(1, min(n, units))
+    base, extra = divmod(units, n)
+    return [unit * (base + (1 if i < extra else 0)) for i in range(n)]
 
 
 def sizes_for(style: StyleSchema, count: int, rng: random.Random) -> list[ShotSize]:
@@ -125,9 +189,11 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
     shots: list[Shot] = []
 
     # --- hook window -------------------------------------------------------
-    hook_cuts = max(style.hook_style.cut_count, 1)
-    hook_shot_sec = round(style.hook_style.window_sec / hook_cuts, 2)
-    for i in range(hook_cuts):
+    quantise = ctx.video.shot_billed_duration
+    hook_lengths = cut_plan(
+        style.hook_style.window_sec, quantise, count=max(style.hook_style.cut_count, 1)
+    )
+    for i, hook_shot_sec in enumerate(hook_lengths):
         move = moves[i % len(moves)]
         hook_scene = (
             f"{hook.selected.visual}. {style.hook_style.shot_size} shot, "
@@ -160,14 +226,14 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
         )
 
     # --- body --------------------------------------------------------------
-    for beat in outline.beats:
-        count = max(
-            int(round(beat.duration_sec / max(style.pacing.avg_shot_sec, MIN_AVG_SHOT_SEC))),
-            1,
+    beat_spans = whole_spans([b.duration_sec for b in outline.beats], quantise)
+    for beat, beat_span in zip(outline.beats, beat_spans, strict=True):
+        lengths = cut_plan(
+            beat_span, quantise, avg=max(style.pacing.avg_shot_sec, MIN_AVG_SHOT_SEC)
         )
-        per = round(beat.duration_sec / count, 2)
+        count = len(lengths)
         sizes = sizes_for(style, count, rng)
-        for j in range(count):
+        for j, per in enumerate(lengths):
             move = moves[(len(shots) + j) % len(moves)]
             body_scene = (
                 f"{beat.content}. {sizes[j]} shot, {move}. {tokens}."

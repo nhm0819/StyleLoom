@@ -296,3 +296,60 @@ def test_windows_are_capped_by_shot_count_not_only_by_duration():
 def test_a_count_cap_alone_still_splits_when_no_window_is_declared():
     windows = render_tool.split_windows(make_shots([1.0] * 7), window_sec=0, max_shots=6)
     assert [len(w) for w in windows] == [6, 1]
+
+
+# --- planning on the endpoint's grid ----------------------------------------- #
+
+
+def test_the_storyboard_asks_only_for_lengths_the_endpoint_can_render(ctx, style, sink):
+    """No silent rounding. The storyboard used to divide beats evenly and hand over
+    0.76s cuts to an endpoint whose shortest renderable cut is 1s; the request
+    quantised without complaint and the delivered video ran ~40% long."""
+    record = run_once(ctx, style.style_id, RunInputs(text=INPUT))
+    board = Storyboard.model_validate_json(
+        (ctx.runs.dir_for(record.run_id) / "storyboard.json").read_text(encoding="utf-8")
+    )
+    requested = [s.duration_sec for s in board.shots]
+    assert requested == ctx.video.plan_shot_durations(requested)
+
+
+def test_the_total_survives_the_snapping(ctx, style):
+    """Rounding each beat on its own accumulates. The error is carried forward, so
+    the total stays within half a unit of the reference however many beats there are."""
+    record = run_once(ctx, style.style_id, RunInputs(text=INPUT))
+    board = Storyboard.model_validate_json(
+        (ctx.runs.dir_for(record.run_id) / "storyboard.json").read_text(encoding="utf-8")
+    )
+    unit = ctx.video.shot_billed_duration(1e-6)
+    total = sum(s.duration_sec for s in board.shots)
+    assert abs(total - style.total_duration) <= unit
+
+
+def test_a_pacing_floor_widens_the_tolerance_by_exactly_the_forced_gap():
+    """Accepting the floor, not abandoning the check. A style whose cuts are longer
+    than the floor is measured as strictly as before."""
+    from styleloom_core.tools.qc import tolerance_for
+
+    strict = tolerance_for("avg_shot_sec", 2.0, min_cut=1.0)
+    assert strict == tolerance_for("avg_shot_sec", 2.0)
+
+    widened = tolerance_for("avg_shot_sec", 0.76, min_cut=1.0)
+    assert widened == pytest.approx((1.0 - 0.76) + 1.0 * 0.15, abs=0.001)
+    assert widened > tolerance_for("avg_shot_sec", 0.76)
+
+
+def test_a_pacing_floor_is_reported_rather_than_absorbed(ctx, style, sink):
+    """The check passing must not read as "the pacing was reproduced".
+
+    Pacing is set below the floor explicitly rather than taken from the fixture,
+    whose 1.21s cuts sit above it -- the point of the test is the case where the
+    endpoint cannot deliver what the reference does.
+    """
+    style.pacing.avg_shot_sec = 0.6
+    ctx.styles.save(style)
+    assert ctx.video.shot_billed_duration(1e-6) > style.pacing.avg_shot_sec
+
+    run_once(ctx, style.style_id, RunInputs(text=INPUT))
+
+    messages = [e.message for e in sink.events]
+    assert any("does not mean the pacing was reproduced" in m for m in messages), messages
