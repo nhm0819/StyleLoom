@@ -26,6 +26,7 @@ from styleloom_core.schema import (
     Storyboard,
 )
 from styleloom_core.session import RunSession
+from styleloom_core.tools import ingest as ingest_tool
 from styleloom_core.tools.keyframe import anchor_prompt, frame_prompt, keyframe, lead_shots
 from styleloom_core.tools.render import plan_windows
 
@@ -65,6 +66,8 @@ def _run(ctx, style, casting, board) -> Keyframes:
     session.artifacts["style"] = style
     session.artifacts["casting"] = casting
     session.artifacts["storyboard"] = board
+    # The frame prompts name what the run is about, so keyframe reads the brief.
+    session.artifacts["brief"] = ingest_tool.ingest(ctx, session)
     return keyframe(ctx, session)
 
 

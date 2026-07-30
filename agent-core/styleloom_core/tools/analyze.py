@@ -24,6 +24,7 @@ from ..schema import (
     CaptionStyle,
     HookStyle,
     Look,
+    LookDetail,
     Pacing,
     StyleSchema,
 )
@@ -85,7 +86,12 @@ def extract_style(
         task="style_synthesis",
         system=(
             "You are a short-form video editor. Describe an existing style precisely "
-            "and reusably. Do not invent numbers -- only name qualitative attributes."
+            "and reusably. Do not invent numbers -- only name qualitative "
+            "attributes.\n"
+            "Be specific and physical. `soft warm key light from the upper left` is "
+            "usable; `nice lighting` is not. These phrases are pasted into image "
+            "generation prompts, so write what a camera would see, not how the video "
+            "feels to watch."
         ),
         user=(
             "You are given measured statistics from short-form reference videos.\n"
@@ -94,7 +100,17 @@ def extract_style(
             f"warmth={m['warmth']}, shot_count={m['shot_count']}, "
             f"cuts_in_first_3s={m['cuts_in_first_3s']}\n"
             "Name the visual style. Return JSON with keys: grade, cut_style, "
-            "moves (list), voice_tone, keywords (list), notes."
+            "moves (list), voice_tone, keywords (list), notes, and these five "
+            "single-phrase fields describing what the frames look like:\n"
+            "  subject   -- what is on screen and how it is framed\n"
+            "  lighting  -- direction, hardness and colour of the light\n"
+            "  texture   -- surface qualities: skin, product, fabric, moisture\n"
+            "  palette   -- the actual colours present, not a measurement\n"
+            "  lens      -- depth of field, focal length feel, camera-as-device look\n"
+            "plus one more for motion, which a still cannot express:\n"
+            "  motion_feel -- what drives the cutting and the movement\n"
+            "The five visual fields go into image generation prompts and "
+            "motion_feel into video prompts, so keep each to its own concern."
         ),
         temperature=0.3,
         images=keyframes or None,
@@ -117,6 +133,12 @@ def extract_style(
             contrast=m["contrast"],
             warmth=m["warmth"],
             keywords=named.get("keywords") or [],
+            detail=LookDetail(
+                **{
+                    field: str(named.get(field) or "").strip()
+                    for field in LookDetail.model_fields
+                }
+            ),
         ),
         caption=CaptionStyle(),
         audio=AudioStyle(

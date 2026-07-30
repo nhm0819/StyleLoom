@@ -44,12 +44,56 @@ class Camera(BaseModel):
     moves: list[str] = Field(default_factory=lambda: ["handheld_micro_shake"])
 
 
+class LookDetail(BaseModel):
+    """The reference's visual vocabulary, split by which model can act on it.
+
+    `look.keywords` was one flat list and that is why it went nowhere useful. It
+    mixed things a still image can be told (`macro product texture`) with things
+    only a video can express (`sfx-driven rhythm`) and things that actively fight
+    the stage they were sent to -- `no talking head` in a prompt whose whole job is
+    generating a portrait of the presenter.
+
+    Split, each field can go to the stage that can use it. `keywords` stays as the
+    fallback for styles extracted before this existed, and as somewhere for phrases
+    that fit none of these.
+
+    Fields are single phrases rather than lists: each one answers one question, and
+    a phrase is easier to budget and to write into a prompt than a list to join.
+    """
+
+    # For image generation. These are what stop a frame from looking like stock.
+    subject: str = ""    # what is on screen and how it is framed
+    lighting: str = ""   # direction, hardness, colour of the light
+    texture: str = ""    # surface qualities: skin, product, fabric, moisture
+    palette: str = ""    # the actual colours, not a measurement of them
+    lens: str = ""       # depth of field, focal feel, camera-as-device look
+
+    # For video generation only. A still cannot express either.
+    motion_feel: str = ""  # what drives the cutting and the movement
+
+    def image_phrases(self) -> list[str]:
+        """The fields a still-image prompt can act on, in prompt order."""
+        return [p for p in (self.subject, self.lighting, self.texture,
+                            self.palette, self.lens) if p.strip()]
+
+    def video_phrases(self) -> list[str]:
+        """What a motion prompt can act on that the start frame does not carry."""
+        return [p for p in (self.motion_feel,) if p.strip()]
+
+    def any_set(self) -> bool:
+        return bool(self.image_phrases() or self.video_phrases())
+
+
 class Look(BaseModel):
     grade: str = "neutral"
     saturation: float = Field(0.5, ge=0, le=1)
     contrast: float = Field(0.5, ge=0, le=1)
     warmth: float = Field(0.5, ge=0, le=1)
+    # Kept for styles extracted before `detail` existed, and as the fallback the
+    # prompt builders use when `detail` is empty. Not removed: re-extracting a style
+    # costs an LLM call and a hand-tuned style would lose its corrections.
     keywords: list[str] = Field(default_factory=list)
+    detail: LookDetail = Field(default_factory=LookDetail)
 
 
 class CaptionStyle(BaseModel):

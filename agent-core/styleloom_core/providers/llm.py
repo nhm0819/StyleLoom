@@ -234,6 +234,16 @@ class MockLLM(BaseLLM):
                 "moves": ["handheld_micro_shake", "snap_zoom_in"],
                 "voice_tone": "fast_energetic",
                 "keywords": ["vertical 9:16", "social-native", "high clarity"],
+                # The split visual fields. Returned by the mock for the same reason
+                # it obeys the prompt budgets: a field the offline provider never
+                # fills is a field nothing downstream is tested against, and the
+                # first place it would be exercised is a paid extraction.
+                "subject": "single presenter centred, waist up",
+                "lighting": "soft frontal key light, gentle falloff",
+                "texture": "clean unretouched skin, matte surfaces",
+                "palette": "warm neutrals with one saturated accent",
+                "lens": "35mm feel, mild background separation",
+                "motion_feel": "cuts land on the beat, small handheld drift",
                 "notes": "mock synthesis - metrics only, no VLM captioning",
             }
         return {}

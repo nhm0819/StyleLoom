@@ -35,6 +35,30 @@ from .schema import Casting, StyleSchema
 HOOK_MOTION = "Fast and attention-grabbing."
 BODY_MOTION = "Natural continuous motion, no cut inside the shot."
 
+# Kept when the reference has its own motion description: "no cut inside the shot" is
+# an instruction the model needs in multi-shot mode, where it decides where the cuts
+# inside a window fall. The rest of those two sentences is flavour.
+_NO_INNER_CUT = "No cut inside the shot."
+
+
+def motion_sentence(style: StyleSchema, hook: bool = False) -> str:
+    """What a shot prompt says about movement.
+
+    The reference's own `motion_feel` when it has one. The two constants above were
+    the fallback *and* the only thing ever sent -- every video this system produced
+    said "Natural continuous motion, no cut inside the shot", which is exactly the
+    filler that makes output read as generic.
+
+    This is also where the phrase belongs on a budget. A start frame carries the
+    look, so the scene tokens do not need to describe it, but no still can express
+    cutting rhythm -- and putting it here replaces a sentence of similar length
+    instead of competing with the presenter for the same 512 characters.
+    """
+    feel = style.look.detail.motion_feel.strip()
+    if not feel:
+        return HOOK_MOTION if hook else BODY_MOTION
+    return feel if hook else f"{feel}. {_NO_INNER_CUT}"
+
 # The largest shot-size token, so the budget holds for whichever size is drawn.
 _WIDEST_SIZE = "EWS"
 
@@ -73,7 +97,7 @@ def _fixed_overhead(style: StyleSchema) -> int:
     cycles by shot index, so any shot in the video can be the expensive one.
     """
     move = max(style.camera.moves or ["static"], key=len)
-    motion = max(HOOK_MOTION, BODY_MOTION, key=len)
+    motion = max(motion_sentence(style, hook=True), motion_sentence(style), key=len)
     return len(f". {_WIDEST_SIZE} shot, {move}. . {motion}")
 
 
@@ -99,7 +123,7 @@ def plan_shot_text(
     room = prompt_limit - _fixed_overhead(style)
     if room - len(full) >= TARGET_TEXT_CHARS:
         return full, room - len(full)
-    floor = len(style_tokens(style, casting, keywords=False))
+    floor = len(essential_tokens(style, casting))
     wanted = max(room - TARGET_TEXT_CHARS, floor)
     tokens = style_tokens(style, casting, budget=wanted)
     return tokens, max(room - len(tokens), MIN_TEXT_CHARS)
@@ -110,18 +134,51 @@ def shot_text_chars(prompt_limit: int, style: StyleSchema, casting: Casting) -> 
     return plan_shot_text(prompt_limit, style, casting)[1]
 
 
-def look_tokens(style: StyleSchema) -> str:
-    """Grade only. QC measures these, so they go in every entry even when
-    identity does not -- a continuation inherits the person, not the grade."""
-    look = style.look
-    return (
-        f"{look.grade} colour grade, "
-        f"saturation {look.saturation:.2f}, contrast {look.contrast:.2f}"
-    )
+def descriptive_phrases(style: StyleSchema, for_image: bool) -> list[str]:
+    """The reference's visual vocabulary, for the stage that can act on it.
+
+    Falls back to `look.keywords` when `look.detail` is empty, which is every style
+    extracted before the split existed. The fallback is deliberately unfiltered: a
+    flat keyword list cannot be sorted into image and motion phrases after the fact,
+    so an old style sends all of it and a re-extracted one sends the right subset.
+    """
+    detail = style.look.detail
+    if detail.any_set():
+        return detail.image_phrases() if for_image else detail.video_phrases()
+    return list(style.look.keywords)
+
+
+def look_tokens(style: StyleSchema, for_image: bool = False) -> str:
+    """The grade, named, plus whatever description the stage can use.
+
+    The measured `saturation`/`contrast` figures used to be here and are gone. They
+    were put in prompts because QC scores them, which confused two different jobs: QC
+    reads them from `style.json`, and no image or video model interprets
+    "saturation 0.35". They cost 30 characters of a 512-character shot budget and
+    displaced the phrases that actually drive colour -- the grade name, the palette
+    and the lighting. The grade *name* stays, because that is language.
+    """
+    parts = [f"{style.look.grade} colour grade"]
+    parts += descriptive_phrases(style, for_image=for_image)
+    return ", ".join(p for p in parts if p)
+
+
+def token_parts(style: StyleSchema, casting: Casting) -> list[str]:
+    """The three things a shot prompt names, in the order the model reads them."""
+    return [
+        casting.creator.prompt,
+        f"in {casting.setting.prompt}",
+        f"{style.look.grade} colour grade",
+    ]
+
+
+def essential_tokens(style: StyleSchema, casting: Casting) -> str:
+    """The shortest form that still names all three: each one's head clause."""
+    return ", ".join(p.split(",")[0].strip() for p in token_parts(style, casting))
 
 
 def style_tokens(
-    style: StyleSchema, casting: Casting, budget: int = 0, keywords: bool = True
+    style: StyleSchema, casting: Casting, budget: int = 0
 ) -> str:
     """The look, the presenter and the location, compressed into prompt tokens.
 
@@ -133,32 +190,53 @@ def style_tokens(
     up first because colour is what QC measures. Only whole clauses are removed --
     cutting to a character count would hand the model half a sentence.
     """
-    look = style.look
-    parts = [
-        casting.creator.prompt,
-        f"in {casting.setting.prompt}",
-        f"{look.grade} colour grade",
-        f"saturation {look.saturation:.2f}",
-        f"contrast {look.contrast:.2f}",
-    ]
+    parts = token_parts(style, casting)
     # No framing token. Under text-to-video `aspect_ratio` is an explicit request
-    # field, so spelling "vertical 9:16" into the prompt spends characters
-    # restating what the API already knows -- and inside a 512-character
-    # storyboard entry those characters cost `contrast`, which QC measures.
-    fixed = len(parts)
-    if keywords:
-        parts += look.keywords[:4]
+    # field, so spelling "vertical 9:16" into the prompt spends characters restating
+    # what the API already knows.
+    #
+    # No saturation/contrast figures either -- see `look_tokens`. They were the last
+    # thing this compression gave up, on the grounds that QC measures them, which
+    # meant a 512-character budget spent its final characters on two numbers no model
+    # reads while dropping the phrases that describe the shot.
+    #
+    # No descriptive phrases: those go to the image prompts, which have 2500
+    # characters, and the motion one goes in `motion_sentence`.
     parts = [p for p in parts if p]
 
     if budget > 0:
-        # Index order to give up, most expendable first: the descriptive keywords,
-        # then location, then the presenter, and only then the measured colour.
-        give_up = list(range(fixed, len(parts))) + [1, 0, 4, 3, 2]
-        dropped: set[int] = set()
-        for index in give_up:
-            if len(", ".join(p for i, p in enumerate(parts) if i not in dropped)) <= budget:
+        # Trailing clauses go before whole tokens do. All three of these are
+        # comma-separated prose -- a location prompt runs past 110 characters and is a
+        # head ("in a sunlit kitchen") followed by qualifiers -- so trimming from the
+        # tail keeps the thing being named while freeing most of its length. Dropping
+        # the token outright loses the place entirely, which is a far bigger loss than
+        # losing its adjectives, and at 512 characters the difference decides whether
+        # the grade survives at all.
+        #
+        # Order is expendability, ranked by how completely the start frame that opens
+        # the generation already carries each one: the image *is* its colour grade,
+        # the location is visible in it, and the presenter is what a viewer notices
+        # breaking -- so the presenter is trimmed last and dropped last.
+        order = [2, 1, 0]
+
+        def joined() -> str:
+            return ", ".join(p for p in parts if p)
+
+        while len(joined()) > budget:
+            trimmed = False
+            for i in order:
+                if "," in parts[i]:
+                    parts[i] = parts[i].rsplit(",", 1)[0].strip()
+                    trimmed = True
+                    break
+            if trimmed:
+                continue
+            # Every token is down to its head and it still does not fit.
+            for i in order:
+                if parts[i]:
+                    parts[i] = ""
+                    break
+            else:
                 break
-            if index < len(parts):
-                dropped.add(index)
-        parts = [p for i, p in enumerate(parts) if i not in dropped]
+        parts = [p for p in parts if p]
     return ", ".join(parts)

@@ -406,23 +406,31 @@ def test_the_budget_only_ever_removes_whole_clauses(ctx, style, brief):
     assert all(part.strip() in full for part in squeezed.split(","))
 
 
-def test_the_budget_gives_up_location_before_colour(ctx, style, brief):
+def test_the_budget_keeps_the_presenter_last_of_all(ctx, style, brief):
     """Drop order is not emission order, and the difference is the point.
 
-    Casting is emitted first so the model weights it heavily. It is dropped
-    first too -- before the colour tokens -- because colour is what QC measures
-    and identity is partly held by the multi-shot generation itself. Ranking by
-    position instead discarded `contrast` while keeping the presenter's wardrobe.
+    Casting is emitted first so the model weights it heavily, and is the last thing
+    given up, because identity is what a viewer notices breaking. Location goes
+    before it.
+
+    The measured saturation/contrast figures used to be the survivors here, on the
+    grounds that QC scores them. They are no longer in the prompt at all: QC reads
+    them from style.json, and spending the final characters of a 512-character
+    budget on two numbers no model interprets is what made the output generic.
     """
     session = make_session(ctx, style, text="주제")
     session.artifacts["brief"] = brief
     cast = casting_tool.casting(ctx, session)
 
-    squeezed = storyboard_tool.style_tokens(style, cast, budget=120)
+    # Sized against the drawn creator's head rather than a fixed number: the cast
+    # pool is sampled, so a constant budget either fits everything or nothing
+    # depending on which presenter came up.
+    head = cast.creator.prompt.split(",")[0]
+    squeezed = storyboard_tool.style_tokens(style, cast, budget=len(head) + 5)
 
-    assert style.look.grade in squeezed
-    assert "saturation" in squeezed and "contrast" in squeezed
+    assert head in squeezed
     assert cast.setting.prompt not in squeezed
+    assert f"{style.look.saturation:.2f}" not in squeezed
 
 
 def test_the_topic_is_not_restated_in_every_shot(ctx, style, brief, outline):

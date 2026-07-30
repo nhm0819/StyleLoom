@@ -44,7 +44,15 @@
       "phone front camera look",
       "product held up to lens at the end",
       "centred subtitles"
-    ]
+    ],
+    "detail": {
+      "subject": "single presenter direct to camera, close-up face filling the frame",
+      "lighting": "soft indoor daylight from a window, mild unflattering fill",
+      "texture": "unretouched skin texture, visible pores, no beauty smoothing",
+      "palette": "muted domestic interior tones, slightly cool cast",
+      "lens": "phone front camera look, wide-ish and close, everything in focus",
+      "motion_feel": "handheld talking rhythm, product held up to the lens at the end"
+    }
   },
   "caption": {
     "pos": "center",

@@ -7,7 +7,7 @@ import random
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from ..budget import BODY_MOTION, HOOK_MOTION, look_tokens, plan_shot_text, style_tokens
+from ..budget import look_tokens, motion_sentence, plan_shot_text, style_tokens
 from ..events import EventKind
 from ..schema import (
     Brief,
@@ -199,7 +199,7 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
             f"{hook.selected.visual}. {style.hook_style.shot_size} shot, "
             f"{move}. {tokens}. Opening shot."
         )
-        hook_motion = HOOK_MOTION
+        hook_motion = motion_sentence(style, hook=True)
         shots.append(
             Shot(
                 index=len(shots),
@@ -239,7 +239,7 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                 f"{beat.content}. {sizes[j]} shot, {move}. {tokens}."
             )
             # Not the move -- that is already in the scene line above.
-            body_motion = BODY_MOTION
+            body_motion = motion_sentence(style)
             shots.append(
                 Shot(
                     index=len(shots),

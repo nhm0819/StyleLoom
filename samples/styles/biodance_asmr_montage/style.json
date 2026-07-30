@@ -58,7 +58,15 @@
       "pale pink and white surfaces",
       "shallow depth of field",
       "sfx-driven rhythm"
-    ]
+    ],
+    "detail": {
+      "subject": "hands and product only, no face in frame, macro product texture",
+      "lighting": "soft warm key light, gentle highlight roll-off, no hard shadow",
+      "texture": "hydrogel sheen and visible moisture, wet glossy product surface",
+      "palette": "pale pink and white surfaces, warm cream neutrals",
+      "lens": "macro close focus, shallow depth of field, creamy background blur",
+      "motion_feel": "cuts fall on the action and the sound effect, not on speech"
+    }
   },
   "caption": {
     "pos": "center_lower",

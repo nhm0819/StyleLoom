@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING
 
 from ..errors import ToolError
 from ..events import EventKind
-from ..schema import Casting, Keyframes, Shot, StyleSchema, Storyboard
+from ..schema import Brief, Casting, Keyframes, Shot, Storyboard, StyleSchema
 from .registry import tool
 from .render import plan_windows
 from .storyboard import look_tokens
@@ -50,29 +50,61 @@ def anchor_prompt(style: StyleSchema, casting: Casting) -> str:
     in the video, so composition is irrelevant and a neutral, well-lit, unambiguous
     subject is what a reference image should be -- the same reason a casting
     headshot is not an action photo.
+
+    The style's own lighting, texture and palette go in, because every later frame
+    descends from this one and inherits whatever look it establishes. `subject` and
+    `lens` are left out on purpose: this frame's framing is fixed by the sentence
+    below, and a reference portrait wants everything sharp -- so "shallow depth of
+    field" or "hands only, no talking head" would fight the one job it has.
     """
+    detail = style.look.detail
+    look = [f"{style.look.grade} colour grade"]
+    if detail.any_set():
+        look += [p for p in (detail.lighting, detail.texture, detail.palette) if p]
+    else:
+        # Pre-split style: a flat list cannot be filtered, so it goes in whole.
+        look += list(style.look.keywords)
     return (
         f"{casting.creator.prompt}, in {casting.setting.prompt}. "
-        f"{look_tokens(style)}. "
+        f"{', '.join(look)}. "
         "Neutral relaxed expression, facing camera, even soft lighting, "
         "full head and shoulders visible, sharp focus. "
         "Reference portrait for character consistency."
     )
 
 
-def frame_prompt(style: StyleSchema, shot: Shot) -> str:
+def frame_prompt(style: StyleSchema, shot: Shot, brief: Brief | None = None) -> str:
     """What one request's opening still asks for.
 
     The anchor supplies who and where, so this supplies only framing and moment.
     Repeating the creator description here would compete with the reference image
     rather than reinforce it -- and where they disagree, text tends to win, which
     is exactly backwards.
+
+    Everything else the reference has to say goes in, because this is the one prompt
+    in the pipeline with room for it. The image endpoint allows 2500 characters and
+    this used to spend 212 of them; the video endpoint allows 512 per shot and is the
+    binding constraint on the whole system. So the look is established *here*, where
+    there is room to describe it, and image-to-video inherits it from the frame
+    instead of being told about it in 512 characters it does not have.
+
+    `brief` is what the run is actually about. The storyboard leaves the topic out of
+    its shot prompts deliberately -- there a paraphrase costs characters the shot
+    description needs -- but here it is free, and a still generated without it drifts
+    toward a generic version of the beat.
     """
-    return (
-        f"Same person, same location, same wardrobe. {shot.action}. "
-        f"{shot.shot_size} shot, {shot.camera_move}. {look_tokens(style)}. "
-        "Single frame, no text, no captions, no watermark."
-    )
+    parts = [
+        "Same person, same location, same wardrobe.",
+        f"{shot.action}.",
+        f"{shot.shot_size} shot, {shot.camera_move}.",
+    ]
+    if brief is not None:
+        # The subject of the video, so the still shows this product and this moment
+        # rather than a plausible stand-in for them.
+        parts.append(f"Subject of the video: {brief.topic}. {brief.key_message}.")
+    parts.append(f"{look_tokens(style, for_image=True)}.")
+    parts.append("Single frame, no text, no captions, no watermark.")
+    return " ".join(parts)
 
 
 def lead_shots(ctx: Context, board: Storyboard) -> list[Shot]:
@@ -86,12 +118,15 @@ def lead_shots(ctx: Context, board: Storyboard) -> list[Shot]:
     return [window[0] for window in plan_windows(ctx, board)]
 
 
-@tool("keyframe", reads=("style", "casting", "storyboard"), writes="keyframe")
+@tool("keyframe", reads=("style", "brief", "casting", "storyboard"), writes="keyframe")
 def keyframe(ctx: Context, session: RunSession) -> Keyframes:
     """Generate the run's identity anchor and one opening still per request."""
     style = session.get("style", StyleSchema)
     casting = session.get("casting", Casting)
     board = session.get("storyboard", Storyboard)
+    # Read for the prompts, not for the plan: the frame stills are the one place with
+    # room to say what the video is about.
+    brief = session.get("brief", Brief)
 
     if not ctx.video.supports_first_frame:
         # Refused rather than skipped, matching how render refuses multi_shot on a
@@ -115,7 +150,7 @@ def keyframe(ctx: Context, session: RunSession) -> Keyframes:
     for shot in lead_shots(ctx, board):
         try:
             frames[shot.index] = ctx.video.generate_image(
-                frame_prompt(style, shot),
+                frame_prompt(style, shot, brief),
                 out_dir / f"lead_{shot.index:02d}.jpg",
                 reference=anchor,
             )

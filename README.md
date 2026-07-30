@@ -678,6 +678,42 @@ heavily, and given up first because colour is what QC measures while identity is
 now partly held by the anchor. At a 120-character budget the tokens that survive
 are grade, saturation and contrast.
 
+**The description goes where there is room for it.** The two endpoints are wildly
+asymmetric: image generation allows 2500 characters per prompt, image-to-video allows
+512 *per shot*. So the reference's visual vocabulary is established in the keyframe
+prompt and the video inherits it from the frame, rather than being restated in 512
+characters it does not have.
+
+That was not how it worked. `style.json` carried seven descriptive phrases about the
+reference — `macro product texture`, `hydrogel sheen and moisture`, `hands only, no
+talking head` — and **none of them reached a model**. The keyframe prompts emitted
+only the grade name plus `saturation 0.35, contrast 0.44`, using 212 of their 2500
+characters; the shot prompt's compression dropped the phrases first, so the surviving
+content was two numbers no image or video model interprets. That is what "generic"
+was made of. Measured, before and after:
+
+| | before | after | budget |
+|---|---|---|---|
+| anchor prompt | 456 | 628 | 2500 |
+| frame prompt | 212 | 557 | 2500 |
+| image phrases reaching the model | 0 / 7 | 5 / 5 | — |
+
+`look.detail` splits the vocabulary by which stage can act on it — `subject`,
+`lighting`, `texture`, `palette`, `lens` for images, `motion_feel` for video. One flat
+list could not be sorted after the fact, and it mixed things a still can be told with
+things that actively fight it: `no talking head` in a prompt whose job is generating a
+portrait of the presenter. `look.keywords` remains as the fallback for styles
+extracted before the split, so nothing has to be re-extracted.
+
+Three consequences worth naming. The measured `saturation`/`contrast` figures are out
+of every prompt — QC reads them from `style.json`, and they were displacing the
+phrases that actually drive colour. `motion_feel` replaced the sentence every video
+used to carry (`Natural continuous motion, no cut inside the shot`), which costs
+nothing and stops the one line describing movement from being identical across every
+video the system has ever made. And compression now trims comma clauses from the tail
+before dropping a token outright: a location prompt runs past 110 characters, so
+keeping its head costs 30 and loses adjectives, where dropping it loses the place.
+
 **The budgets are stated when the text is generated, not enforced after.** Three
 limits land on generated sentences and none of them reports itself when broken: the
 endpoint refuses a shot prompt over 512 characters, `storyboard.fit` buys room under
@@ -808,7 +844,7 @@ check exists because the raw symptom is otherwise a `FileNotFoundError` repeated
 once per affected test — fifty on Linux, fifty `[WinError 2]`s on Windows — none of
 which name ffmpeg or `PATH`.
 
-314 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
+324 tests, no network, no keys — `cli/tests/test_readme.py` fails if that number
 goes stale, along with any command, setting or default this README describes but
 the code no longer has. They cover style extraction recovering the fixture's
 pacing, hook non-determinism and the recency penalty's measured effect, casting
