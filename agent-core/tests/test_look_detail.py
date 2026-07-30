@@ -58,7 +58,11 @@ def test_image_and_video_get_different_phrases():
     assert DETAIL.motion_feel not in DETAIL.image_phrases()
     assert DETAIL.subject not in DETAIL.video_phrases()
     assert len(DETAIL.image_phrases()) == 5
-    assert DETAIL.video_phrases() == [DETAIL.motion_feel]
+    # Empty, not `[motion_feel]`: the look clause on the video side adds nothing,
+    # because `motion_sentence` already carries the phrase in the motion prompt and
+    # the two are concatenated into one request. Sending it from both put it in the
+    # prompt twice and billed the 512-character budget for it twice.
+    assert DETAIL.video_phrases() == []
 
 
 def test_a_style_without_detail_falls_back_to_its_keywords(style):
@@ -209,3 +213,86 @@ def test_compression_trims_clause_tails_before_dropping_a_whole_token(ctx, style
     assert cast.creator.prompt.split(",")[0] in squeezed
     assert cast.setting.prompt.split(",")[0].removeprefix("in ") in squeezed
     assert styled.look.grade in squeezed
+
+
+def make_session(ctx, style, **inputs):
+    from styleloom_core.schema import RunInputs, RunRecord
+    from styleloom_core.session import RunSession
+
+    session = RunSession(
+        record=RunRecord(run_id="t1", style_id=style.style_id),
+        inputs=RunInputs(**inputs),
+        store=ctx.runs,
+    )
+    session.artifacts["style"] = style
+    return session
+
+
+def _hook_result():
+    from styleloom_core.schema import HookCandidate, HookResult
+
+    selected = HookCandidate(
+        archetype="question", text="훅 문장", visual="스냅 줌 인", score=0.8
+    )
+    return HookResult(
+        archetype_pool=["question"],
+        archetype_sampled="question",
+        candidates=[selected],
+        selected=selected,
+        selection_method="test",
+        temperature=0.9,
+        entropy_source="test",
+    )
+
+
+# --- the 512-character budget covers every prompt actually sent -------------- #
+
+
+def test_a_non_leading_shot_prompt_is_budgeted_too(ctx, style, brief, outline):
+    """Regression: only `scene_prompt` was budgeted.
+
+    A window's lead shot sends `video_prompt`; every other shot in it sends
+    `continuation_video_prompt`, and nothing measured that one. With a verbose
+    reference the continuation reached 630 characters against a 512 cap and the
+    endpoint refused the whole request -- for a prompt no stage had ever checked.
+    """
+    from styleloom_core.tools import casting as casting_tool
+    from styleloom_core.tools import storyboard as storyboard_tool
+
+    session = make_session(ctx, style, text="미스트 제품 광고")
+    session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
+    session.artifacts["casting"] = casting_tool.casting(ctx, session)
+
+    board = storyboard_tool.storyboard(ctx, session)
+
+    limit = ctx.video.max_shot_prompt_chars
+    assert limit > 0
+    for shot in board.shots:
+        assert len(shot.video_prompt) <= limit, (
+            f"shot {shot.index} lead prompt is {len(shot.video_prompt)} chars"
+        )
+        assert len(shot.continuation_video_prompt) <= limit, (
+            f"shot {shot.index} continuation is "
+            f"{len(shot.continuation_video_prompt)} chars"
+        )
+
+
+def test_the_provider_accepts_every_shot_the_storyboard_produces(ctx, style, brief, outline):
+    """End to end: the storyboard's own output must pass the provider's check,
+    since that check is what was rejecting real runs."""
+    from styleloom_core.providers.base import MotionShot
+    from styleloom_core.tools import casting as casting_tool
+    from styleloom_core.tools import storyboard as storyboard_tool
+    from styleloom_core.tools.render import plan_windows, window_shots
+
+    session = make_session(ctx, style, text="미스트 제품 광고")
+    session.artifacts.update({"brief": brief, "outline": outline, "hook": _hook_result()})
+    session.artifacts["casting"] = casting_tool.casting(ctx, session)
+    board = storyboard_tool.storyboard(ctx, session)
+
+    for window in plan_windows(ctx, board):
+        shots: list[MotionShot] = window_shots(window)
+        for i, shot in enumerate(shots, start=1):
+            assert len(shot.prompt) <= ctx.video.max_shot_prompt_chars, (
+                f"entry {i} of a window is {len(shot.prompt)} chars"
+            )

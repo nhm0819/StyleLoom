@@ -77,8 +77,15 @@ class LookDetail(BaseModel):
                             self.palette, self.lens) if p.strip()]
 
     def video_phrases(self) -> list[str]:
-        """What a motion prompt can act on that the start frame does not carry."""
-        return [p for p in (self.motion_feel,) if p.strip()]
+        """What a shot prompt's *look* clause adds on the video side: nothing.
+
+        `motion_feel` is the one video-side phrase, and `budget.motion_sentence`
+        already puts it in the motion prompt. Returning it here too put it in both
+        halves of the same request -- `continuation_video_prompt` is
+        `continuation_prompt + motion_prompt`, so the phrase was sent twice and the
+        512-character budget paid for it twice.
+        """
+        return []
 
     def any_set(self) -> bool:
         return bool(self.image_phrases() or self.video_phrases())

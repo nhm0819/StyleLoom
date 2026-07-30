@@ -33,6 +33,39 @@ if TYPE_CHECKING:
     from ..context import Context
 
 MAX_KEYFRAMES_TO_LLM = 6
+
+# Stated in the extraction prompt and enforced on the way back. These fields are
+# carried in *every* shot prompt, against a 512-character per-shot cap the endpoint
+# will not raise, so an unbounded phrase here does not merely bloat one request --
+# it makes every request in every future run of this style fail budgeting.
+#
+# The numbers come from what has to coexist in one shot prompt: the presenter, the
+# location, the grade, the action and the motion sentence. An extraction that
+# answered with a 165-character `motion_feel` and a 120-character `grade` pushed
+# the continuation prompt to 630 characters and the endpoint refused every request.
+MAX_GRADE_CHARS = 60
+MAX_MOTION_CHARS = 80
+MAX_DETAIL_CHARS = 90
+
+
+def clamp_phrase(text: str, limit: int) -> str:
+    """Trim a returned phrase to its budget on a clause boundary.
+
+    Whole clauses, never a character count: a phrase cut mid-word is worse in a
+    prompt than a shorter one, and the leading clause is the one that carries the
+    field's meaning. Falls back to the first clause when even that is over.
+    """
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    clauses = [c.strip() for c in text.split(",") if c.strip()]
+    kept: list[str] = []
+    for clause in clauses:
+        candidate = ", ".join([*kept, clause])
+        if kept and len(candidate) > limit:
+            break
+        kept.append(clause)
+    return ", ".join(kept)[:limit].rstrip(", ")
 MAX_CUT_TIMES_STORED = 40
 
 
@@ -110,7 +143,13 @@ def extract_style(
             "plus one more for motion, which a still cannot express:\n"
             "  motion_feel -- what drives the cutting and the movement\n"
             "The five visual fields go into image generation prompts and "
-            "motion_feel into video prompts, so keep each to its own concern."
+            "motion_feel into video prompts, so keep each to its own concern.\n"
+            f"LENGTH LIMITS, all hard: grade at most {MAX_GRADE_CHARS} characters, "
+            f"motion_feel at most {MAX_MOTION_CHARS}, each of the five visual "
+            f"fields at most {MAX_DETAIL_CHARS}. A video shot prompt is capped at "
+            "512 characters by the endpoint and these are carried in every one of "
+            "them, so a long phrase here costs the shot its own description. "
+            "Write a phrase, not a sentence."
         ),
         temperature=0.3,
         images=keyframes or None,
@@ -128,14 +167,21 @@ def extract_style(
         ),
         camera=Camera(moves=named.get("moves") or ["handheld_micro_shake"]),
         look=Look(
-            grade=named.get("grade", "neutral"),
+            grade=clamp_phrase(str(named.get("grade", "neutral")), MAX_GRADE_CHARS),
             saturation=m["saturation"],
             contrast=m["contrast"],
             warmth=m["warmth"],
             keywords=named.get("keywords") or [],
             detail=LookDetail(
+                # Clamped on the way in, not trusted from the prompt. The limit is
+                # stated to the model and a model can ignore it -- and this value is
+                # written to style.json and reused by every future run, so an
+                # over-long phrase accepted once keeps costing shot prompts forever.
                 **{
-                    field: str(named.get(field) or "").strip()
+                    field: clamp_phrase(
+                        str(named.get(field) or "").strip(),
+                        MAX_MOTION_CHARS if field == "motion_feel" else MAX_DETAIL_CHARS,
+                    )
                     for field in LookDetail.model_fields
                 }
             ),

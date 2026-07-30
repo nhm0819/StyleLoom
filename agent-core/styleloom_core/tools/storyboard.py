@@ -182,6 +182,30 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
             if len(f"{candidate} {motion}") <= limit:
                 return candidate
         return f"{head}{style_tokens(style, casting, budget=1)}{tail}"
+
+    def fit_continuation(action: str, framing: str, motion: str) -> str:
+        """The same budget, for the entry a non-leading shot actually sends.
+
+        `fit` covers `scene_prompt`, which is what the *lead* shot of a window
+        sends. Every other shot in that window sends `continuation_prompt`, and
+        nothing budgeted it -- so the endpoint refused the whole request over a
+        prompt no stage had ever measured. `look_tokens` is not compressible the way
+        `style_tokens` is, so this drops its clauses from the tail, which is where
+        the least load-bearing ones sit.
+        """
+        head = f"{action}. {framing}. Same subject and location."
+        clauses = [c.strip() for c in looks.split(",") if c.strip()]
+        while clauses:
+            candidate = f"{head} {', '.join(clauses)}."
+            if not limit or len(f"{candidate} {motion}") <= limit:
+                return candidate
+            squeezed.append(len(candidate))
+            clauses.pop()
+        # Nothing left to give up: the action alone is over budget, and trimming it
+        # would hand the model half a sentence. `_check_shot_prompt` refuses it with
+        # a message naming the shot, which is more useful than a silent truncation.
+        return head
+
     moves = style.camera.moves or ["static"]
     # brief.topic is deliberately not injected: the beat text already describes
     # this shot of this subject, and the paraphrase cost `contrast` in a 512-
@@ -218,9 +242,10 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                 # to the QC drift check.
                 scene_prompt=fit(hook_scene, hook_motion),
                 motion_prompt=hook_motion,
-                continuation_prompt=(
-                    f"{hook.selected.visual}. {style.hook_style.shot_size} shot, "
-                    f"{move}. Same subject and location. {looks}."
+                continuation_prompt=fit_continuation(
+                    hook.selected.visual,
+                    f"{style.hook_style.shot_size} shot, {move}",
+                    hook_motion,
                 ),
             )
         )
@@ -255,9 +280,8 @@ def storyboard(ctx: Context, session: RunSession) -> Storyboard:
                     caption=(beat.caption or beat.content) if j == 0 else "",
                     scene_prompt=fit(body_scene, body_motion),
                     motion_prompt=body_motion,
-                    continuation_prompt=(
-                        f"{beat.content}. {sizes[j]} shot, {move}. "
-                        f"Same subject and location. {looks}."
+                    continuation_prompt=fit_continuation(
+                        beat.content, f"{sizes[j]} shot, {move}", body_motion
                     ),
                 )
             )
