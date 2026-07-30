@@ -204,15 +204,27 @@ def test_a_missing_bgm_is_caught_at_the_same_point_as_the_input(ctx, style):
         run_once(ctx, style.style_id, RunInputs(text=INPUTS[0], bgm=Path("nope.mp3")))
 
 
-def test_no_image_input_reaches_the_renderer(ctx, style):
-    """Text-to-video has no image parameter, so there is no --persona to honour.
+def test_no_reference_footage_reaches_the_renderer(ctx, style):
+    """The keyframe stage is back, and this is the line it must not cross.
 
-    Regression guard on the removal rather than on the option: an image input
-    that reached the provider would be silently dropped, and the failure looks
-    like a good video in which the creator is someone else.
+    Superseded guard: this test used to assert the renderer had no image input at
+    all, because the keyframe stage had been removed. That is no longer the
+    invariant -- `use_first_frame` puts a generated still into every request.
+
+    The invariant that survives is narrower and is the one that actually matters:
+    images entering generation are ones this system *made*. Reference frames from
+    the analysed video stay analysis-only -- `probe_video` hands them to
+    `tools/analyze` to be turned into language and they are never persisted, so
+    there is no path from a reference frame to a render. See docs/KEYFRAME_SCOPE.md.
     """
-    assert not hasattr(ctx.video, "keyframe")
     assert "persona_ref" not in RunInputs.model_fields
+    # The only producer of generation-input images.
+    assert hasattr(ctx.video, "generate_image")
+    # style.json is self-contained: no frame bytes, no path back to the source mp4.
+    saved = (ctx.styles.dir_for(style.style_id) / "style.json").read_text(
+        encoding="utf-8"
+    )
+    assert "keyframe" not in saved.lower()
 
 
 def test_windows_are_packed_against_delivered_length_not_requested():

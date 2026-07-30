@@ -316,6 +316,8 @@ data/runs/<run_id>/
 ├── outline.json      body beats + payoff
 ├── hook.json         pool, sampled archetype, every candidate, selection method
 ├── storyboard.json   per-shot prompts, sizes, durations, captions
+├── keyframe.json     the run's anchor, and which lead each opening frame was drawn for
+├── keyframes/        anchor.jpg + one lead_NN.jpg per render request
 ├── render.json       clip segments and per-shot errors
 ├── assemble.json     final video path
 ├── qc_report.json    measured conformance to the style
@@ -532,6 +534,9 @@ To pin a provider regardless of keys — offline testing on a keyed machine — 
 | `STYLELOOM_LLM_MODEL` | `claude-sonnet-5` | |
 | `STYLELOOM_VIDEO_PROVIDER` | `auto` | `auto` \| `mock` \| `kling` |
 | `STYLELOOM_KLING_T2V_MODEL` | `kling-v3` | a `model_name` sent in the body, not a URL segment. Must be a key in `configs/kling_models.yaml`. `styleloom models` compares the alternatives |
+| `STYLELOOM_KLING_T2I_MODEL` | `kling-v3` | builds the first frame. `POST /v1/images/generations` |
+| `STYLELOOM_KLING_I2V_MODEL` | `kling-v3-omni` | animates it. Omni by default because its `image_list` carries a *typed* first frame |
+| `STYLELOOM_USE_FIRST_FRAME` | `true` | generate one anchor still per run and open every request on a frame derived from it. `false` drops the keyframe stage and renders from text |
 | `STYLELOOM_KLING_MODE` | `std` | `std` \| `pro`. The quality tier, which is a request field here rather than a separate endpoint |
 | `STYLELOOM_KLING_BASE_URL` | `https://api-singapore.klingai.com` | International account system. `api-beijing.klingai.com` is a different account, not a region |
 | `STYLELOOM_KLING_TIMEOUT_SEC` | `900` | Covers queue time as well as inference |
@@ -566,58 +571,94 @@ POST https://api-singapore.klingai.com/v1/videos/image2video
 An unrecognised name fails at startup rather than at the first request, because
 the provider checks it against the registry before doing any work.
 
-### Text to video, with no keyframe stage
+### One anchor, carried into every request
 
-One call per cut. An earlier revision generated a still with Kling Image and
-animated it, which cost two calls and two round trips per cut. It bought less
-than it appeared to: every cut generated its own keyframe from its own text, so
-the keyframe fixed *that* cut's composition and did nothing to make the next cut
-the same person.
+`use_first_frame` is on by default, and the pipeline is
+`storyboard -> keyframe -> render`:
 
-Cross-cut identity now comes from `multi_shot` instead. Every cut inside one
-request is produced by a single generation, so the model holds the person and the
-room across the cuts it makes itself. A 3-cut talking-head is one request and
-therefore one person; a 14-cut montage splits into three and is three people —
-better than the fourteen it used to be, and not the same as one.
+```
+anchor    one still per run, from the cast creator + setting + grade
+   |      reference image, addressed as <<<image_1>>>
+frames    one still per render request, derived from the anchor
+   |      first_frame
+video     image-to-video, with multi_shot cutting inside each window
+```
+
+This stage existed once and was removed. The critique that removed it was correct
+and is kept in [TOOL_RATIONALE.md](docs/TOOL_RATIONALE.md): every cut generated
+**its own** keyframe from **its own** text, so nothing was held across cuts and the
+second call per cut bought only single-shot composition control. The same document
+named the fix — "one keyframe reused as every cut's start image" — and that is what
+`anchor` is. [KEYFRAME_SCOPE.md](docs/KEYFRAME_SCOPE.md) records the reversal in
+full, including which parts of the original decision still hold.
+
+**The two mechanisms hold different axes, which is why both are on.**
+
+| | within one request | between requests |
+|---|---|---|
+| `multi_shot` (one generation) | holds | does not |
+| `first_frame` (shared anchor) | — | holds |
+
+`multi_shot` alone makes a 14-cut montage three requests and therefore three
+people. The anchor ties those three together.
+
+**The anchor is not reused verbatim as every request's frame.** Under
+image-to-video the start frame *is* the output's first frame, so two windows opening
+on identical pixels reads as the video restarting. Each request's frame is generated
+*from* the anchor instead, which keeps the person and the grade while letting the
+composition move. The offline mock follows the same rule, and making it copy the
+anchor instead is how `test_output_conforms_to_the_style_it_claims` broke during
+this change: identical opening frames meant no detectable cuts and QC reported a
+catastrophic pacing miss on a correct timeline.
+
+**Cost, for a 30s video in `multi_shot` mode (3 windows):** 1 anchor + 3 frames + 3
+video calls. The removed design spent 20 image calls and 20 video calls and got no
+cross-cut identity for them. Text-to-video spends 0 and 3, and drifts between
+windows — `STYLELOOM_USE_FIRST_FRAME=false` returns to that.
 
 **Only the first entry in a window establishes the subject.** All six entries of
 a `multi_prompt` request are read by one generation, so repeating the presenter
 and the room in each of them spent 260 of the 512 characters an entry gets on
 something the model had already been told. Continuation entries say "same subject
 and location" and restate only the grade, which QC measures and which drifts if
-left unsaid. Three other repetitions went with it: the burnt-in-caption
-instruction moved to `negative_prompt` (one field per request instead of 47
-characters times six), the camera move stopped being written in both the scene
-line and the motion clause, and the framing token went entirely because
-`aspect_ratio` is an explicit request field. Continuation entries went from ~509
-characters to ~180, and the lead entry now keeps `contrast` instead of dropping
-it to fit.
+left unsaid.
 
 **When the budget still binds, colour is the last thing dropped.** Emission order
 and drop order are separate: casting is written first so the model weights it
 heavily, and given up first because colour is what QC measures while identity is
-partly held by the multi-shot generation itself. Ranking by position discarded
-`contrast` while keeping the presenter's wardrobe, which is backwards. At a
-120-character budget the tokens that survive are grade, saturation and contrast.
+now partly held by the anchor. At a 120-character budget the tokens that survive
+are grade, saturation and contrast.
 
 **Prompts are budgeted, and the two limits are five times apart.** A top-level
 `prompt` takes ~2500 characters; a single entry inside `multi_prompt` takes 512.
-The prompts this system builds run 590–700, so `per_shot` fits comfortably and
-`multi_shot` does not. In `multi_shot` the storyboard therefore builds each entry
-to fit, dropping whole clauses from the tail of the shared style tokens —
-keywords first, then contrast — so the budget is spent on identity and grade,
-which QC measures. Nothing is truncated mid-sentence, and the provider refuses an
-over-length entry rather than trimming it.
+The provider refuses an over-length entry rather than trimming it.
 
-**`kling-v3` versus `kling-v3-omni` are different paths.** Kling's own docs
-present 3.0 and 3.0 Omni on one page, and fal's naming hid the split further by
-putting both under `kling-video/{v3,o3}/…` with one call shape. Officially they
-are separate endpoints:
+**`multi_prompt`, not the semicolon form.** Kling documents two ways to express a
+shot list and they are not interchangeable. `multi_prompt` is a JSON array of
+`{index, prompt, duration}` and is what both official curl examples send; the
+semicolon form (`"shot 1, 3, words; shot 2, 4, words;"`) is documented for
+hand-written Omni prompts, where there is one `prompt` field and no array. The array
+is the verified transport and is the default. `format_semicolon_shots` implements the
+other and `multi_shot_syntax` selects it, but it is marked unverified for a specific
+reason: the schema says `prompt` is invalid once `multi_shot` is true, no official
+example shows the semicolon string alongside those flags, and the failure is silent —
+prose that does not parse as a shot list becomes one long shot and the task reports
+success.
 
-| `model_name` | path | |
+**Three endpoints, three paths.**
+
+| `model_name` | path | role |
 |---|---|---|
-| `kling-v3` | `/v1/videos/text2video` | the default |
-| `kling-v3-omni` | `/v1/videos/omni-video/` | reference-driven tier |
+| `kling-v3` | `/v1/images/generations` | first frame |
+| `kling-v3-omni` | `/v1/videos/omni-video/` | image-to-video, typed `image_list` |
+| `kling-v3` | `/v1/videos/image2video/` | image-to-video, flat `image` |
+| `kling-v3` | `/v1/videos/text2video` | fallback when the frame is off |
+
+The flat-versus-typed split is the one to get right. On omni a first frame goes in
+`image_list` as `{"type": "first_frame", ...}`; an untyped entry is accepted and
+billed as a style reference, the video does not start on the frame, and nothing in
+the response says so. Base64 goes in raw — a `data:image/png;base64,` prefix is a
+400.
 
 ### What the move off fal cost, and what it bought
 

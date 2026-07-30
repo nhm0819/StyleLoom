@@ -88,7 +88,7 @@ def _ratio(choice: str) -> float:
 
 
 class KlingVideoProvider(BaseVideoProvider):
-    """The official Open Platform, text to video."""
+    """The official Open Platform: text to image, then image to video."""
 
     name = "kling"
 
@@ -96,11 +96,20 @@ class KlingVideoProvider(BaseVideoProvider):
         self.settings = settings
         specs = load_kling_specs(settings)
         self.base_url = (settings.kling_base_url or specs.get("base_url", "")).rstrip("/")
-        t2v_id = settings.kling_t2v_model
-        self.t2v_id = t2v_id
-        # Validated on construction, not at the first request, so a typo fails the
-        # run before any credits are spent.
+        self.t2v_id = settings.kling_t2v_model
+        self.t2i_id = settings.kling_t2i_model
+        self.i2v_id = settings.kling_i2v_model
+        # All three validated on construction, not at the first request, so a typo
+        # fails the run before any credits are spent -- including a typo in the i2v
+        # model, which would otherwise surface only after the keyframe was paid for.
         self.t2v = self._spec(specs, "text_to_video", self.t2v_id)
+        self.t2i = self._spec(specs, "text_to_image", self.t2i_id)
+        self.i2v = self._spec(specs, "image_to_video", self.i2v_id)
+        # Which spec the capability properties below describe. The two endpoints
+        # have separate limits, and reporting the wrong one would have the caller
+        # budget prompts and pack windows against an endpoint it never calls.
+        self.render = self.i2v if settings.use_first_frame else self.t2v
+        self.render_id = self.i2v_id if settings.use_first_frame else self.t2v_id
         # Signing needs the secret on every call, so it is checked once here
         # rather than producing a 401 twenty minutes into a batch.
         encode_jwt(settings.kling_access_key, settings.kling_secret_key, int(time.time()))
@@ -119,23 +128,27 @@ class KlingVideoProvider(BaseVideoProvider):
 
     @property
     def min_clip_sec(self) -> float:
-        return float(self.t2v.get("min_duration", 0))
+        return float(self.render.get("min_duration", 0))
 
     @property
     def supports_multi_shot(self) -> bool:
-        return "multi_prompt" in (self.t2v.get("capabilities") or [])
+        return "multi_prompt" in (self.render.get("capabilities") or [])
+
+    @property
+    def supports_first_frame(self) -> bool:
+        return "first_frame" in (self.i2v.get("capabilities") or [])
 
     @property
     def max_shot_window_sec(self) -> float:
-        return float(self.t2v.get("max_shot_window_sec", 0))
+        return float(self.render.get("max_shot_window_sec", 0))
 
     @property
     def max_shots_per_request(self) -> int:
-        return int(self.t2v.get("max_shots_per_request", 0))
+        return int(self.render.get("max_shots_per_request", 0))
 
     @property
     def max_shot_prompt_chars(self) -> int:
-        return int(self.t2v.get("max_shot_prompt_chars", 0))
+        return int(self.render.get("max_shot_prompt_chars", 0))
 
     @property
     def max_concurrency(self) -> int:
@@ -237,21 +250,20 @@ class KlingVideoProvider(BaseVideoProvider):
     # Separated from the calls above so the shape -- the part that breaks
     # silently -- is testable without a key or a network.
 
-    def _aspect_ratio(self) -> str:
+    def _aspect_ratio(self, spec: dict) -> str:
         return aspect_ratio_for(
             self.settings.width,
             self.settings.height,
-            self.t2v.get("aspect_ratio_choices") or ["9:16", "16:9", "1:1"],
+            spec.get("aspect_ratio_choices") or ["9:16", "16:9", "1:1"],
         )
 
-    def _duration_string(self, duration: float) -> str:
+    def _duration_string(self, spec: dict, duration: float) -> str:
         """Whole seconds for a single-cut request, always rounded UP.
 
         `render_shot` trims a long clip down and cannot extend a short one, so
         rounding to nearest would buy 4s for a 4.4s cut and leave the timeline
         quietly short. `round()` is also banker's: round(4.5) is 4.
         """
-        spec = self.t2v
         wanted = max(duration, float(spec.get("min_duration", 1)))
         seconds = math.ceil(wanted - 1e-9)
         return str(min(seconds, int(spec.get("max_duration", seconds))))
@@ -263,44 +275,176 @@ class KlingVideoProvider(BaseVideoProvider):
         never trimmed, so rounding up would stretch every video. floor(x + 0.5)
         rather than banker's round(), where round(2.5) is 2.
         """
-        if self.t2v.get("multi_prompt_duration_type") == "integer_string":
+        if self.render.get("multi_prompt_duration_type") == "integer_string":
             return float(max(1, math.floor(seconds + 0.5)))
         return seconds
+
+    @staticmethod
+    def encode_image(path: Path) -> str:
+        """Raw Base64, with no data URI prefix.
+
+        The prefix is the documented 400 on this API and the easiest mistake to
+        make, since every browser-facing example of Base64 image data carries one.
+        """
+        return base64.b64encode(path.read_bytes()).decode("ascii")
+
+    def _attach_first_frame(self, spec: dict, payload: dict, frame: Path) -> None:
+        """Put the start frame where this endpoint expects it.
+
+        Two shapes, and the difference is not cosmetic. image2video takes a flat
+        Base64 string; omni-video takes a typed list where `type: first_frame` is
+        what separates a start frame from a mere style reference. An untyped entry
+        on omni is accepted and billed as a reference image, so the video does not
+        start on the frame and nothing in the response says so.
+        """
+        param = spec.get("first_frame_param")
+        if not param:
+            raise VideoProviderError(
+                f"{self.i2v_id} has no first_frame parameter in "
+                "configs/kling_models.yaml, so it cannot take a start frame. "
+                "Set STYLELOOM_USE_FIRST_FRAME=false, or pick a model that can."
+            )
+        encoded = self.encode_image(frame)
+        if spec.get("first_frame_format") == "typed_list":
+            payload[param] = [
+                {
+                    "type": spec.get("first_frame_type", "first_frame"),
+                    "url": encoded,
+                    "id": spec.get("first_frame_id", "image_1"),
+                }
+            ]
+        else:
+            payload[param] = encoded
 
     # --- payloads ---------------------------------------------------------- #
     #
     # Separated from the calls so the shape -- the part that breaks silently --
     # is testable without a key or a network.
 
-    def build_generate_payload(self, prompt: str, duration: float) -> dict:
-        spec = self.t2v
+    def _spec_for(self, first_frame: Path | None) -> tuple[dict, str]:
+        """i2v when there is a frame to animate, t2v when there is not."""
+        if first_frame is not None:
+            return self.i2v, self.i2v_id
+        return self.t2v, self.t2v_id
+
+    def build_generate_payload(
+        self, prompt: str, duration: float, first_frame: Path | None = None
+    ) -> dict:
+        spec, model_id = self._spec_for(first_frame)
         payload: dict = {
-            "model_name": self.t2v_id,
+            "model_name": model_id,
             "mode": self.settings.kling_mode,
             "prompt": prompt,
-            "aspect_ratio": self._aspect_ratio(),
             **spec.get("defaults", {}),
         }
-        payload[spec["duration_param"]] = self._duration_string(duration)
+        # Only when the endpoint has nothing to read it off. With a start frame the
+        # ratio comes from the image, and stating it again can only disagree.
+        if spec.get("sends_aspect_ratio", True):
+            payload["aspect_ratio"] = self._aspect_ratio(spec)
+        if first_frame is not None:
+            self._attach_first_frame(spec, payload, first_frame)
+        payload[spec["duration_param"]] = self._duration_string(spec, duration)
         limit = int(spec.get("max_prompt_chars", 0))
         if limit and len(prompt) > limit:
             raise VideoProviderError(
-                f"prompt is {len(prompt)} characters, over {self.t2v_id}'s "
+                f"prompt is {len(prompt)} characters, over {model_id}'s "
                 f"{limit}-character limit."
             )
         return payload
 
-    def build_sequence_payload(self, shots: list[MotionShot]) -> dict:
-        """Multi-shot storyboard.
+    def build_image_payload(
+        self, prompt: str, reference: Path | None = None
+    ) -> dict:
+        """A first frame. Optionally consistent with an anchor already generated.
+
+        When `reference` is given the prompt is prefixed with the endpoint's
+        reference token, because a reference image that is never addressed in the
+        prompt is weighted as loose style guidance rather than as the subject to
+        preserve -- which is precisely the identity drift this stage exists to stop.
+        """
+        spec = self.t2i
+        if reference is not None:
+            token = spec.get("reference_token", "")
+            prompt = f"{token} {prompt}".strip() if token else prompt
+        limit = int(spec.get("max_prompt_chars", 0))
+        if limit and len(prompt) > limit:
+            raise VideoProviderError(
+                f"image prompt is {len(prompt)} characters, over {self.t2i_id}'s "
+                f"{limit}-character limit."
+            )
+        payload: dict = {
+            "model_name": self.t2i_id,
+            "prompt": prompt,
+            "aspect_ratio": self._aspect_ratio(spec),
+            **spec.get("defaults", {}),
+        }
+        if reference is not None:
+            param = spec.get("reference_param")
+            if not param:
+                raise VideoProviderError(
+                    f"{self.t2i_id} has no reference_param in "
+                    "configs/kling_models.yaml, so it cannot hold one anchor "
+                    "across frames."
+                )
+            payload[param] = self.encode_image(reference)
+        return payload
+
+    def format_semicolon_shots(self, shots: list[MotionShot]) -> str:
+        """The docs' prose form of a shot list: `shot n, m, words;` per cut.
+
+        `n` is the 1-based shot number and `m` its duration in whole seconds. Kling
+        documents this for hand-written Omni prompts, where there is one `prompt`
+        field and no array to put a storyboard in.
+
+        Not the default transport -- see `multi_shot_syntax` in
+        configs/kling_models.yaml for why. Kept because it is the only multi-shot
+        form available on a request that has no `multi_prompt` array, and because
+        the failure mode when it is wrong is silent: prose that does not parse as a
+        shot list becomes one long shot and the task still reports success.
+
+        Semicolons inside a prompt are stripped rather than escaped. There is no
+        documented escape, so a stray one would end the shot early and shift every
+        cut after it.
+        """
+        parts = []
+        for index, shot in enumerate(shots, start=1):
+            seconds = int(self.shot_billed_duration(shot.duration))
+            words = shot.prompt.replace(";", ",").strip()
+            parts.append(f"shot {index}, {seconds}, {words}")
+        return "; ".join(parts) + ";"
+
+    def build_sequence_payload(
+        self, shots: list[MotionShot], first_frame: Path | None = None
+    ) -> dict:
+        """Multi-shot storyboard, optionally anchored on a start frame.
 
         `multi_shot` and `shot_type` must both be set for `multi_prompt` to be
         read at all, and setting them makes the top-level `prompt` invalid.
         """
-        spec = self.t2v
+        spec, model_id = self._spec_for(first_frame)
+        payload: dict = {
+            "model_name": model_id,
+            "mode": self.settings.kling_mode,
+            **spec.get("defaults", {}),
+            spec["multi_shot_param"]: "true",
+            "shot_type": spec.get("shot_type", "customize"),
+        }
+        if spec.get("sends_aspect_ratio", True):
+            payload["aspect_ratio"] = self._aspect_ratio(spec)
+        if first_frame is not None:
+            self._attach_first_frame(spec, payload, first_frame)
+
+        if spec.get("multi_shot_syntax") == "semicolon_prompt":
+            # The whole storyboard in the one text field, which is the point of
+            # this syntax. `multi_prompt` is left out entirely rather than sent
+            # alongside: the two would be two different shot lists in one request.
+            payload["prompt"] = self.format_semicolon_shots(shots)
+            return payload
+
         param = spec.get("multi_prompt_param")
         if not param:
             raise VideoProviderError(
-                f"{self.t2v_id} has no multi_prompt parameter. "
+                f"{model_id} has no multi_prompt parameter. "
                 "Use render_mode=per_shot, or add the parameter name to "
                 "configs/kling_models.yaml after checking the docs."
             )
@@ -323,7 +467,7 @@ class KlingVideoProvider(BaseVideoProvider):
                 # sentence and charging for the result.
                 raise VideoProviderError(
                     f"storyboard entry {index} is {len(shot.prompt)} characters, "
-                    f"over {self.t2v_id}'s {limit}-character limit for a shot "
+                    f"over {model_id}'s {limit}-character limit for a shot "
                     "prompt. Shorten the style keywords, or render with "
                     "render_mode=per_shot, where the whole prompt goes in the "
                     f"top-level field ({spec.get('max_prompt_chars', '?')} chars)."
@@ -333,28 +477,47 @@ class KlingVideoProvider(BaseVideoProvider):
                 entry = {"index": index, **entry}
             entries.append(entry)
 
-        return {
-            "model_name": self.t2v_id,
-            "mode": self.settings.kling_mode,
-            "aspect_ratio": self._aspect_ratio(),
-            **spec.get("defaults", {}),
-            spec["multi_shot_param"]: "true",
-            "shot_type": spec.get("shot_type", "customize"),
-            param: entries,
-        }
+        payload[param] = entries
+        return payload
 
     # --- interface --------------------------------------------------------- #
 
-    def generate(self, prompt: str, duration: float, out_path: Path) -> Path:
-        path = self.t2v["path"]
-        task_id = self._submit(path, self.build_generate_payload(prompt, duration))
+    def generate_image(
+        self, prompt: str, out_path: Path, reference: Path | None = None
+    ) -> Path:
+        path = self.t2i["path"]
+        task_id = self._submit(path, self.build_image_payload(prompt, reference))
         return self._download(
-            self._poll(path, task_id, self.t2v["output_key"]), out_path
+            self._poll(path, task_id, self.t2i["output_key"]), out_path
         )
 
-    def generate_sequence(self, shots: list[MotionShot], out_path: Path) -> Path:
-        path = self.t2v["path"]
-        task_id = self._submit(path, self.build_sequence_payload(shots))
+    def generate(
+        self,
+        prompt: str,
+        duration: float,
+        out_path: Path,
+        first_frame: Path | None = None,
+    ) -> Path:
+        spec, _ = self._spec_for(first_frame)
+        path = spec["path"]
+        task_id = self._submit(
+            path, self.build_generate_payload(prompt, duration, first_frame)
+        )
         return self._download(
-            self._poll(path, task_id, self.t2v["output_key"]), out_path
+            self._poll(path, task_id, spec["output_key"]), out_path
+        )
+
+    def generate_sequence(
+        self,
+        shots: list[MotionShot],
+        out_path: Path,
+        first_frame: Path | None = None,
+    ) -> Path:
+        spec, _ = self._spec_for(first_frame)
+        path = spec["path"]
+        task_id = self._submit(
+            path, self.build_sequence_payload(shots, first_frame)
+        )
+        return self._download(
+            self._poll(path, task_id, spec["output_key"]), out_path
         )

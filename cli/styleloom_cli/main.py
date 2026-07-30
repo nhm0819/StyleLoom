@@ -45,9 +45,19 @@ app.registered_commands += models_cmd.app.registered_commands
 @app.command("plan")
 def show_plan(
     no_qc: Annotated[bool, typer.Option("--no-qc")] = False,
+    no_keyframe: Annotated[
+        bool,
+        typer.Option(
+            "--no-keyframe",
+            help="first frame 단계 제외 (text-to-video로 렌더)",
+        ),
+    ] = False,
 ) -> None:
     """실행될 파이프라인과 각 단계의 입출력 아티팩트를 출력합니다."""
-    plan = build_plan(include_qc=not no_qc)
+    # Flags rather than reading Settings: this command builds no context and
+    # touches no disk, so it prints the shape asked for rather than the shape this
+    # machine happens to be configured for.
+    plan = build_plan(include_qc=not no_qc, include_keyframe=not no_keyframe)
     typer.secho(f"plan: {plan.name}", bold=True)
     for line in plan.describe():
         typer.echo(f"  {line}")

@@ -34,6 +34,10 @@ ARTIFACT_FILES = {
     "outline": "outline.json",
     "hook": "hook.json",
     "storyboard": "storyboard.json",
+    # Paths, not bytes. The JPEGs live in `keyframes/`; this records which anchor a
+    # run used and which lead each frame was drawn for, neither of which is
+    # recoverable from the images afterwards.
+    "keyframe": "keyframe.json",
     "render": "render.json",
     "assemble": "assemble.json",
     "qc": "qc_report.json",

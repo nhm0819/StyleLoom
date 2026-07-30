@@ -9,7 +9,7 @@ Why each choice was made, including the alternatives that were rejected.
 | **ffmpeg** | cut, trim, concat, burn captions | Cut timing and caption position are deterministic operations; a model does them worse than a `for` loop and gives up reproducibility. |
 | **OpenCV** | measure pacing, colour, keyframes | Style properties have to be numbers to be reproducible *and* checkable in QC. One decode pass yields cuts, colour stats and keyframes together. |
 | **Claude Sonnet 5** (Anthropic) | brief, outline, hook candidates, style naming | Vision-capable, so reference keyframes go in alongside the measured stats; reliable structured JSON under an explicit schema. |
-| **KlingAI Open Platform** | text-to-video | Called directly rather than through an aggregator, and `multi_shot` — the storyboard that lowers the billed floor from 3s to 1s per cut — is a first-class part of its own schema rather than a wrapper's translation of it. |
+| **KlingAI Open Platform** | text-to-image, image-to-video, text-to-video | Called directly rather than through an aggregator, and `multi_shot` — the storyboard that lowers the billed floor from 3s to 1s per cut — is a first-class part of its own schema rather than a wrapper's translation of it. |
 | **Kling Video v3** | text-to-video, **default** | Takes `aspect_ratio` rather than pixel dimensions, so 9:16 is requested directly rather than cropped afterwards. `multi_shot` storyboards, 3s floor, 15s ceiling. `mode: std\|pro` selects the quality tier in the request, so switching tiers is a setting rather than a different endpoint. |
 | **pydantic** | data contracts, settings | Every stage artifact is written to disk and read back; validation at the boundary is the contract. Env-driven settings come free. |
 | **Typer** | CLI | Type hints *are* the parser, so the command signature and its validation are one declaration instead of two. |
@@ -36,7 +36,7 @@ fixed position).
 
 ---
 
-## One-stage render: text → clip
+## Two-stage render: text → anchor → clip
 
 `tools/render.py` calls text-to-video directly. An earlier revision generated a
 still keyframe and animated it, on the reasoning recorded below — kept because
@@ -59,15 +59,31 @@ image, or a character reference pinned by `element_list`. The first is not what 
 code did; the second needs an Element Management call this repo could not verify.
 
 So the two calls per cut were buying single-shot composition control, and the
-consistency argument was not being served. Text-to-video with `multi_shot` serves
-it better: every cut inside one request comes from one generation, so the model
-holds the person and the room across the cuts it makes itself. A 3-cut
-talking-head is one request and one person; a 14-cut montage is three requests and
-three people, against the fourteen it used to be.
+consistency argument was not being served.
 
-Trade-off: composition control within a single cut is weaker, and there is no
-cheap still to reject before paying for motion. Both are real. Neither was the
-thing the two-stage design was defended on.
+**The keyframe stage is now back, in the shape that sentence describes.** One anchor
+per run, generated from the cast creator and setting, reused as the *reference image*
+for every request's opening frame. `tools/keyframe.py` builds it and `render` opens
+each request on it.
+
+Two mechanisms, two axes, which is why both are on:
+
+| | within one request | between requests |
+|---|---|---|
+| `multi_shot` (one generation) | holds | does not |
+| `first_frame` (shared anchor) | — | holds |
+
+`multi_shot` alone makes a 14-cut montage three requests and therefore three people.
+The anchor ties them together. And the cost is not the old cost: a 30s video in
+`multi_shot` mode buys 1 anchor + 3 frames, not one image per cut.
+
+Trade-off, stated plainly: three or four image calls per video that text-to-video
+does not pay, and `first_frame` only fixes the *first* frame — how far the model
+drifts from it over the following seconds is the model's decision. `element_list`
+would pin identity harder and still needs an Element Management call this repo has
+not verified. So identity is requested, not guaranteed, and QC measures colour
+rather than faces. Full reversal recorded in
+[KEYFRAME_SCOPE.md](KEYFRAME_SCOPE.md).
 
 ---
 

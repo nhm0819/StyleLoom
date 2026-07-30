@@ -6,7 +6,18 @@ its `extract_style` entry point but is deliberately not registered -- it produce
 the reusable style asset rather than a run artifact.
 """
 
-from . import analyze, assemble, casting, hook, ingest, outline, qc, render, storyboard
+from . import (
+    analyze,
+    assemble,
+    casting,
+    hook,
+    ingest,
+    keyframe,
+    outline,
+    qc,
+    render,
+    storyboard,
+)
 from .analyze import extract_style
 from .registry import REGISTRY, ToolSpec, get, names, tool
 
@@ -20,6 +31,7 @@ __all__ = [
     "get",
     "hook",
     "ingest",
+    "keyframe",
     "names",
     "outline",
     "qc",

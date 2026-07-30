@@ -278,3 +278,146 @@ def test_every_model_enforces_the_prompt_limits(model_name):
     assert provider.build_generate_payload("x", 3.0)["negative_prompt"]
     with pytest.raises(VideoProviderError, match="over"):
         provider.build_sequence_payload([MotionShot("x" * 600, 1.0)])
+
+
+# --- first frame: image payload -------------------------------------------- #
+#
+# The keyframe stage is back after having been removed once. It is a different
+# design -- one anchor per run, reused as the reference for every request's opening
+# frame -- and these assertions are on the part that made the old one pointless:
+# whether the anchor actually reaches the request.
+
+
+def test_every_new_spec_declares_the_fields_the_provider_reads():
+    specs = load_kling_specs(Settings())
+    for spec in specs["text_to_image"].values():
+        for key in ("path", "output_key", "reference_param"):
+            assert key in spec
+    for spec in specs["image_to_video"].values():
+        for key in ("path", "first_frame_param", "duration_param", "output_key"):
+            assert key in spec
+
+
+def test_an_unknown_i2v_model_fails_on_construction():
+    """Before the keyframe is paid for, not after."""
+    with pytest.raises(VideoProviderError, match="unknown image_to_video"):
+        make_provider(kling_i2v_model="kling-v9-imaginary")
+
+
+def test_an_image_payload_without_a_reference_sends_no_reference_field():
+    payload = make_provider().build_image_payload("a face")
+    assert payload["model_name"] == V3
+    assert payload["aspect_ratio"] == "9:16"
+    assert "image" not in payload
+
+
+def test_a_reference_is_raw_base64_with_no_data_uri_prefix(tmp_path):
+    """The prefix is a documented 400, and every browser-facing base64 example
+    carries one, so this is the easiest mistake in the whole integration."""
+    ref = tmp_path / "anchor.jpg"
+    ref.write_bytes(b"\xff\xd8\xff\xe0jpegbytes")
+    payload = make_provider().build_image_payload("same person, wider", ref)
+    assert payload["image"] == base64.b64encode(ref.read_bytes()).decode()
+    assert not payload["image"].startswith("data:")
+
+
+def test_a_reference_is_addressed_in_the_prompt(tmp_path):
+    """An unaddressed reference image is weighted as loose style guidance rather
+    than as the subject to preserve, which is the drift this stage exists to stop."""
+    ref = tmp_path / "anchor.jpg"
+    ref.write_bytes(b"x")
+    payload = make_provider().build_image_payload("wider angle", ref)
+    assert payload["prompt"].startswith("<<<image_1>>>")
+
+
+# --- first frame: video payload -------------------------------------------- #
+
+
+def _frame(tmp_path):
+    path = tmp_path / "lead.jpg"
+    path.write_bytes(b"\xff\xd8\xff\xe0frame")
+    return path
+
+
+def test_omni_carries_the_first_frame_as_a_typed_list_entry(tmp_path):
+    """`type` is what separates a start frame from a style reference on omni. An
+    untyped entry is accepted and billed, the video does not start on the frame,
+    and nothing in the response says so."""
+    frame = _frame(tmp_path)
+    payload = make_provider().build_generate_payload("she smiles", 3.0, frame)
+    assert payload["model_name"] == OMNI
+    entry = payload["image_list"][0]
+    assert entry["type"] == "first_frame"
+    assert entry["id"] == "image_1"
+    assert entry["url"] == base64.b64encode(frame.read_bytes()).decode()
+
+
+def test_the_non_omni_endpoint_takes_a_flat_base64_field(tmp_path):
+    """Two shapes for the same concept. A flat string sent to omni, or a list sent
+    to image2video, is the silent-ignore failure this spec file exists to prevent."""
+    provider = make_provider(kling_i2v_model=V3)
+    payload = provider.build_generate_payload("p", 3.0, _frame(tmp_path))
+    assert isinstance(payload["image"], str)
+    assert "image_list" not in payload
+
+
+def test_a_request_with_a_start_frame_states_no_aspect_ratio(tmp_path):
+    """The endpoint reads the ratio off the image. Sending one can only disagree
+    with the frame that was just uploaded."""
+    payload = make_provider().build_generate_payload("p", 3.0, _frame(tmp_path))
+    assert "aspect_ratio" not in payload
+
+
+def test_no_start_frame_still_states_the_ratio():
+    """The other half of the rule: text2video has nothing to read it off."""
+    assert "aspect_ratio" in make_provider().build_generate_payload("p", 3.0)
+
+
+def test_a_storyboard_can_be_anchored_and_still_be_a_storyboard(tmp_path):
+    """Both mechanisms at once, which is the whole point: multi_prompt holds
+    identity within one generation and the frame holds it between them."""
+    payload = make_provider().build_sequence_payload(
+        [MotionShot("a", 1.0), MotionShot("b", 2.0)], _frame(tmp_path)
+    )
+    assert payload["multi_shot"] == "true"
+    assert len(payload["multi_prompt"]) == 2
+    assert payload["image_list"][0]["type"] == "first_frame"
+
+
+def test_the_render_spec_follows_the_first_frame_setting():
+    """Capability properties have to describe the endpoint that will actually be
+    called, or the caller budgets prompts and packs windows against another one."""
+    assert make_provider().render_id == OMNI
+    assert make_provider(use_first_frame=False).render_id == V3
+
+
+# --- semicolon shot syntax ------------------------------------------------- #
+
+
+def test_semicolon_shots_follow_the_documented_shape():
+    """`shot n, m, words;` -- n the 1-based number, m whole seconds."""
+    text = make_provider().format_semicolon_shots(
+        [MotionShot("wide establishing", 3.0), MotionShot("close up", 4.4)]
+    )
+    assert text == "shot 1, 3, wide establishing; shot 2, 4, close up;"
+
+
+def test_a_semicolon_inside_a_prompt_is_neutralised():
+    """There is no documented escape, so a stray one would end the shot early and
+    shift every cut after it."""
+    text = make_provider().format_semicolon_shots([MotionShot("a; b", 1.0)])
+    assert text == "shot 1, 1, a, b;"
+
+
+def test_semicolon_mode_sends_one_prompt_and_no_array(tmp_path):
+    """The two would be two different shot lists in one request."""
+    provider = make_provider()
+    # Patched on the i2v spec, and a frame is passed, because that is the pairing
+    # the semicolon syntax is declared on -- `_spec_for(None)` would read t2v.
+    provider.i2v = {**provider.i2v, "multi_shot_syntax": "semicolon_prompt"}
+    payload = provider.build_sequence_payload(
+        [MotionShot("a", 1.0), MotionShot("b", 1.0)], _frame(tmp_path)
+    )
+    assert "multi_prompt" not in payload
+    assert payload["prompt"] == "shot 1, 1, a; shot 2, 1, b;"
+    assert payload["image_list"][0]["type"] == "first_frame"

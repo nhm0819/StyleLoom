@@ -28,7 +28,7 @@ from ..errors import ToolError
 from ..events import EventKind
 from ..media import trim_to
 from ..providers import BaseVideoProvider, MotionShot
-from ..schema import ClipSegment, RenderResult, Shot, Storyboard
+from ..schema import ClipSegment, Keyframes, RenderResult, Shot, Storyboard
 from .registry import tool
 
 if TYPE_CHECKING:
@@ -41,7 +41,12 @@ TRIM_EPSILON = 0.05
 FALLBACK_WINDOW_SEC = 15.0
 
 
-def render_shot(provider: BaseVideoProvider, shot: Shot, out_dir: Path) -> Path:
+def render_shot(
+    provider: BaseVideoProvider,
+    shot: Shot,
+    out_dir: Path,
+    first_frame: Path | None = None,
+) -> Path:
     """Render one shot at exactly `shot.duration_sec`.
 
     The endpoint floor (3s on Kling v3) is well above a typical short-form cut, so
@@ -49,15 +54,21 @@ def render_shot(provider: BaseVideoProvider, shot: Shot, out_dir: Path) -> Path:
     costs a 3s generation -- and stretching the shot to fill the floor instead
     would destroy the pacing the schema exists to reproduce. `multi_shot` is the
     way out; see the module docstring.
+
+    `first_frame` is what the cut opens on. None falls back to text-to-video, which
+    is how a shot whose keyframe failed still renders.
     """
     requested = max(shot.duration_sec, provider.min_clip_sec)
     final = out_dir / f"shot_{shot.index:02d}.mp4"
 
     if requested <= shot.duration_sec + TRIM_EPSILON:
-        return provider.generate(shot.video_prompt, requested, final)
+        return provider.generate(shot.video_prompt, requested, final, first_frame)
 
     raw = provider.generate(
-        shot.video_prompt, requested, out_dir / "raw" / f"shot_{shot.index:02d}.mp4"
+        shot.video_prompt,
+        requested,
+        out_dir / "raw" / f"shot_{shot.index:02d}.mp4",
+        first_frame,
     )
     return trim_to(raw, shot.duration_sec, final)
 
@@ -104,7 +115,7 @@ def split_windows(
 
 
 def _render_per_shot(
-    ctx: Context, session: RunSession, board: Storyboard
+    ctx: Context, session: RunSession, board: Storyboard, frames: Keyframes
 ) -> RenderResult:
     out_dir = session.workspace("shots")
     results: dict[int, Path] = {}
@@ -112,7 +123,9 @@ def _render_per_shot(
 
     def work(shot: Shot) -> None:
         try:
-            results[shot.index] = render_shot(ctx.video, shot, out_dir)
+            results[shot.index] = render_shot(
+                ctx.video, shot, out_dir, frames.for_lead(shot.index)
+            )
         except Exception as exc:  # provider errors are expected and recoverable
             errors[shot.index] = f"{type(exc).__name__}: {exc}"
 
@@ -136,7 +149,7 @@ def _render_per_shot(
 
 
 def _render_multi_shot(
-    ctx: Context, session: RunSession, board: Storyboard
+    ctx: Context, session: RunSession, board: Storyboard, frames: Keyframes
 ) -> RenderResult:
     """One generation per window of shots.
 
@@ -171,6 +184,10 @@ def _render_multi_shot(
                     for i, s in enumerate(shots)
                 ],
                 out_dir / f"win_{w:02d}.mp4",
+                # Keyed on the window's lead, which is the shot whose composition
+                # the frame was generated for. `keyframe.lead_shots` packs windows
+                # with the same function, so the keys line up by construction.
+                frames.for_lead(shots[0].index),
             )
         except Exception as exc:
             # A window failure loses every cut in it, unlike per_shot mode where
@@ -198,6 +215,13 @@ def _render_multi_shot(
 def render(ctx: Context, session: RunSession) -> RenderResult:
     """Render every shot, isolating failures as far as the chosen mode allows."""
     board = session.get("storyboard", Storyboard)
+    # Not declared in `reads`: the keyframe stage is optional, and declaring it
+    # would make a plan without it fail validation rather than render from text.
+    frames = (
+        session.get("keyframe", Keyframes)
+        if session.has("keyframe")
+        else Keyframes()
+    )
     mode = ctx.settings.render_mode
     if mode == "multi_shot" and not ctx.video.supports_multi_shot:
         raise ToolError(
@@ -208,9 +232,9 @@ def render(ctx: Context, session: RunSession) -> RenderResult:
         )
 
     if mode == "multi_shot":
-        result = _render_multi_shot(ctx, session, board)
+        result = _render_multi_shot(ctx, session, board, frames)
     else:
-        result = _render_per_shot(ctx, session, board)
+        result = _render_per_shot(ctx, session, board, frames)
 
     if result.errors:
         session.save_raw(

@@ -5,8 +5,13 @@ few months -- several of the current leaders did not exist a year ago. Hardcodin
 one gives the harness a shelf life; keeping the choice in settings means someone
 else can point this at whatever is best when they read it.
 
-Text-to-video only. Cross-cut consistency comes from multi-shot requests, which
-produce every cut in a window from one generation.
+Three methods rather than two, because consistency needs a stage that text-to-video
+does not have. Multi-shot requests hold identity *within* one generation and cannot
+hold it between them; a first frame carried into every request holds it across all
+of them. `generate_image` produces that frame, and both render methods accept it.
+
+`first_frame` is optional on both, so a provider that cannot take one still works
+and a run configured without one still renders.
 """
 
 from __future__ import annotations
@@ -82,6 +87,12 @@ class BaseVideoProvider:
         top-level prompt -- 512 against a few thousand on Kling. 0 means none."""
         return 0
 
+    @property
+    def supports_first_frame(self) -> bool:
+        """Whether a generated still can be carried into a render as its opening
+        frame, and whether `generate_image` is therefore worth calling."""
+        return False
+
     def shot_billed_duration(self, seconds: float) -> float:
         """How long one cut inside a multi-shot request actually runs.
 
@@ -91,11 +102,33 @@ class BaseVideoProvider:
         """
         return seconds
 
-    def generate(self, prompt: str, duration: float, out_path: Path) -> Path:
-        """One cut, from text alone."""
+    def generate_image(
+        self, prompt: str, out_path: Path, reference: Path | None = None
+    ) -> Path:
+        """One still.
+
+        `reference` is another image the result should stay consistent with, which
+        is the whole reason this method exists rather than each frame being an
+        independent roll. Only called when `supports_first_frame`.
+        """
         raise NotImplementedError
 
-    def generate_sequence(self, shots: list[MotionShot], out_path: Path) -> Path:
+    def generate(
+        self,
+        prompt: str,
+        duration: float,
+        out_path: Path,
+        first_frame: Path | None = None,
+    ) -> Path:
+        """One cut. From `first_frame` when given, from text alone otherwise."""
+        raise NotImplementedError
+
+    def generate_sequence(
+        self,
+        shots: list[MotionShot],
+        out_path: Path,
+        first_frame: Path | None = None,
+    ) -> Path:
         """Several cuts in one clip, each with its own prompt and duration.
 
         Only called when `supports_multi_shot`.

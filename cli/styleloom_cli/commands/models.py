@@ -174,12 +174,35 @@ def models(
     typer.secho(
         f"\n  current mode: {ctx.settings.render_mode}", fg="cyan", bold=True
     )
-    typer.secho(f"  keyframes: {shots} needed per video in per_shot mode", bold=True)
-    typer.echo(f"  endpoints: {', '.join(t2i) or 'none'}")
-    typer.echo(
-        "  In multi_shot mode only one start image per generation is needed, so this\n"
-        "  drops to the generation count regardless of how many cuts there are."
-    )
+    if ctx.settings.use_first_frame:
+        # The generation count, not the cut count. One anchor for the run plus one
+        # opening frame per request -- which is what makes this affordable at all,
+        # since the removed design bought one image per cut and held nothing.
+        requests = shots
+        if ctx.settings.render_mode == "multi_shot":
+            spec = specs.get("image_to_video", {}).get(ctx.settings.kling_i2v_model, {})
+            multi = multi_prompt_billed_sec(spec, total, shots)
+            requests = multi[1] if multi else shots
+        typer.secho(
+            f"  first frames: 1 anchor + {requests} opening frame(s) = "
+            f"{requests + 1} image call(s)",
+            bold=True,
+        )
+        typer.echo(f"  endpoints: {', '.join(t2i) or 'none'}")
+        typer.echo(
+            "  The anchor is generated once from the cast creator and reused as the\n"
+            "  reference for every opening frame, so identity survives across\n"
+            "  generations. multi_shot holds it within one request and cannot hold it\n"
+            "  between them. STYLELOOM_USE_FIRST_FRAME=false drops both the image\n"
+            "  calls and that guarantee."
+        )
+    else:
+        typer.secho("  first frames: off (text-to-video)", bold=True)
+        typer.echo(
+            "  No image calls, and no cross-request identity: each generation rolls\n"
+            "  its own presenter. STYLELOOM_USE_FIRST_FRAME=true adds one anchor plus\n"
+            "  one frame per generation."
+        )
     typer.secho(f"\n  rates: {source}", fg="bright_black")
     typer.secho(
         "  Rates move and endpoints change. Re-check the model page before "

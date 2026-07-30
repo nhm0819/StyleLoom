@@ -10,7 +10,7 @@ from styleloom_core import (
     RunInputs,
     RunStatus,
     StyleLoomError,
-    build_plan,
+    default_plan,
     run_batch,
     run_once,
 )
@@ -65,7 +65,9 @@ def run(
         text=text, file_path=file, bgm=bgm, language=lang
     )
     try:
-        record = run_once(ctx, style_id, inputs, plan=build_plan(include_qc=not no_qc))
+        record = run_once(
+            ctx, style_id, inputs, plan=default_plan(ctx, include_qc=not no_qc)
+        )
     except StyleLoomError as exc:
         abort(str(exc))
         return
@@ -122,7 +124,7 @@ def batch(
     typer.echo(f"{len(items)} inputs -> style {style_id}\n")
     try:
         records = run_batch(
-            ctx, style_id, items, plan=build_plan(include_qc=not no_qc)
+            ctx, style_id, items, plan=default_plan(ctx, include_qc=not no_qc)
         )
     except StyleLoomError as exc:
         abort(str(exc))

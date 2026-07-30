@@ -240,6 +240,30 @@ class Storyboard(BaseModel):
         return sum(s.duration_sec for s in self.shots)
 
 
+class Keyframes(BaseModel):
+    """The stills that open each render request.
+
+    `anchor` is generated once per run from the cast creator and setting. Every
+    frame in `frames` is then generated *with the anchor as a reference*, which is
+    the whole design: one identity, many compositions. The previous revision of
+    this project generated a frame per cut from that cut's own text and got neither.
+
+    `frames` is keyed by the index of the shot that *leads* a request -- every shot
+    in `per_shot` mode, the first shot of each window in `multi_shot`. Render looks
+    up its lead and passes the frame down; a missing key means that request falls
+    back to text-to-video rather than failing.
+    """
+
+    anchor: Path | None = None
+    frames: dict[int, Path] = Field(default_factory=dict)
+    # Which model produced them, recorded because a run's cost and its look both
+    # depend on it and neither is recoverable from the JPEG afterwards.
+    model: str = ""
+
+    def for_lead(self, shot_index: int) -> Path | None:
+        return self.frames.get(shot_index)
+
+
 class ClipSegment(BaseModel):
     """One rendered file and the shots it contains, in order.
 

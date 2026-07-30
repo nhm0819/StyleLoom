@@ -43,6 +43,42 @@ class MockVideoProvider(BaseVideoProvider):
         return gradient_keyframe(digest, out_path, self.settings)
 
     @property
+    def supports_first_frame(self) -> bool:
+        """True, and really implemented: `generate_image` writes a JPEG and both
+        render methods start from it when given one.
+
+        Not a stub, for the same reason `supports_multi_shot` is not: if the
+        offline provider declared no first-frame support, the keyframe stage would
+        never run in a test and the first time it ran would be against a paid API.
+
+        What it cannot tell you is whether a real endpoint *honours* the frame.
+        ffmpeg starts exactly where told; a video model is asked.
+        """
+        return True
+
+    def generate_image(
+        self, prompt: str, out_path: Path, reference: Path | None = None
+    ) -> Path:
+        """A still, derived from the prompt *and* from `reference` when given.
+
+        Both inputs, not just the reference. Copying the anchor verbatim looks like
+        a closer imitation of "stay consistent with it", and it breaks the pipeline:
+        the opening frame of every cut becomes byte-identical, the concatenated
+        video contains no detectable cuts, and QC reports a catastrophic pacing miss
+        on a perfectly correct timeline. That is not a mock artifact. It is the real
+        failure mode of an anchor applied too literally, and it is why each request's
+        frame is *derived* from the anchor rather than being it.
+
+        Mixing the reference into the digest is how the offline renderer shows that
+        inheritance: same anchor with different prompts gives different frames, and
+        the same prompt under a different anchor gives a different frame too.
+        """
+        seed = prompt
+        if reference is not None and reference.is_file():
+            seed = f"{hashlib.sha1(reference.read_bytes()).hexdigest()}:{prompt}"
+        return self._still(seed, out_path)
+
+    @property
     def supports_multi_shot(self) -> bool:
         """True, and genuinely implemented rather than stubbed.
 
@@ -70,29 +106,42 @@ class MockVideoProvider(BaseVideoProvider):
         # run in a test, and the first time it ran would be against a paid API.
         return 512
 
-    def generate(self, prompt: str, duration: float, out_path: Path) -> Path:
+    def generate(
+        self,
+        prompt: str,
+        duration: float,
+        out_path: Path,
+        first_frame: Path | None = None,
+    ) -> Path:
         scratch = out_path.parent / f"{out_path.stem}_still.jpg"
-        return push_in(
-            self._still(prompt, scratch), duration, out_path, self.settings
-        )
+        opening = first_frame if first_frame is not None else self._still(prompt, scratch)
+        return push_in(opening, duration, out_path, self.settings)
 
-    def generate_sequence(self, shots: list[MotionShot], out_path: Path) -> Path:
+    def generate_sequence(
+        self,
+        shots: list[MotionShot],
+        out_path: Path,
+        first_frame: Path | None = None,
+    ) -> Path:
         """Build one clip whose shots are visually distinct.
 
-        Each cut derives its own frame from its own prompt. If they all looked
-        alike the output would contain no detectable cuts at all, and the QC drift
-        check would report a catastrophic miss on a perfectly correct timeline.
+        Each cut after the first derives its own frame from its own prompt. If they
+        all looked alike the output would contain no detectable cuts at all, and the
+        QC drift check would report a catastrophic miss on a perfectly correct
+        timeline. `first_frame` therefore opens the clip and does not replace every
+        cut in it -- which is also what the real endpoint does with it.
         """
         scratch = out_path.parent / f"{out_path.stem}_parts"
-        parts = [
-            push_in(
-                self._still(shot.prompt, scratch / f"{i:02d}.jpg"),
-                shot.duration,
-                scratch / f"{i:02d}.mp4",
-                self.settings,
+        parts = []
+        for i, shot in enumerate(shots):
+            still = (
+                first_frame
+                if i == 0 and first_frame is not None
+                else self._still(shot.prompt, scratch / f"{i:02d}.jpg")
             )
-            for i, shot in enumerate(shots)
-        ]
+            parts.append(
+                push_in(still, shot.duration, scratch / f"{i:02d}.mp4", self.settings)
+            )
         return concat(parts, out_path)
 
 

@@ -23,11 +23,12 @@ from .errors import (
 )
 from .events import Event, EventKind, EventSink, ListSink, NullSink
 from .planner import Plan, build_plan
-from .runner import execute, prepare_session, run_batch, run_once
+from .runner import default_plan, execute, prepare_session, run_batch, run_once
 from .schema import (
     Brief,
     Casting,
     HookResult,
+    Keyframes,
     Outline,
     QCReport,
     RunInputs,
@@ -50,6 +51,7 @@ __all__ = [
     "EventKind",
     "EventSink",
     "HookResult",
+    "Keyframes",
     "LLMError",
     "ListSink",
     "MediaError",
@@ -73,6 +75,7 @@ __all__ = [
     "__version__",
     "build_context",
     "build_plan",
+    "default_plan",
     "execute",
     "extract_style",
     "new_run_id",

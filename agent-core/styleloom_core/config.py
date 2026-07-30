@@ -54,7 +54,7 @@ class Settings(BaseSettings):
         ),
     )
 
-    # --- Video (keyframe + image-to-video) ---------------------------------
+    # --- Video (first frame + image-to-video) ------------------------------
     video_provider: str = "auto"  # auto | mock | kling
     # The access key travels inside the token; the secret key signs it.
     kling_access_key: str = Field(
@@ -71,7 +71,21 @@ class Settings(BaseSettings):
     # provider validates both on construction rather than at the first request.
     #
     # Must be a key in configs/kling_models.yaml; validated on provider init.
+    #
+    # Three models because there are three endpoints. t2i builds the first frame,
+    # i2v animates it, and t2v is only reached when `use_first_frame` is off.
     kling_t2v_model: str = "kling-v3"
+    kling_t2i_model: str = "kling-v3"
+    # Omni by default, and this is the one non-obvious default in the file: it is
+    # the endpoint whose `image_list` carries a *typed* first frame, so a start
+    # frame is a start frame rather than a loose style reference.
+    kling_i2v_model: str = "kling-v3-omni"
+
+    # Generate one anchor still per run and carry it into every render request.
+    # This is what holds the presenter's face and the colour grade across cuts that
+    # separate generations cannot hold on their own. Off falls back to text-to-video
+    # and one fewer call per window, at the cost of identity drift between windows.
+    use_first_frame: bool = True
 
     # Also a resolution choice: std renders 720p, pro 1080p. Must match the
     # output size below or the result is upscaled; `doctor` flags a mismatch.

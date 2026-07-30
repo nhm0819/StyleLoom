@@ -61,6 +61,19 @@ def resolve_inputs(settings: Settings, inputs: RunInputs) -> RunInputs:
     return inputs.model_copy(update=updates) if updates else inputs
 
 
+def default_plan(ctx: Context, include_qc: bool = True) -> Plan:
+    """The standard plan, minus the stages this context turns off.
+
+    Every transport goes through here rather than calling `build_plan` with its
+    own arguments. `use_first_frame` is a setting, so a caller that built the plan
+    itself would have to remember to read it -- and forgetting means the keyframe
+    stage runs and bills for images that render was configured not to use.
+    """
+    return build_plan(
+        include_qc=include_qc, include_keyframe=ctx.settings.use_first_frame
+    )
+
+
 def prepare_session(
     ctx: Context,
     style_id: str,
@@ -153,7 +166,7 @@ def run_once(
     caller asked for something impossible.
     """
     session = prepare_session(ctx, style_id, inputs, run_id=run_id)
-    return execute(ctx, session, plan or build_plan())
+    return execute(ctx, session, plan or default_plan(ctx))
 
 
 def run_batch(
@@ -169,7 +182,7 @@ def run_batch(
     would let all three draw the same archetype and lose exactly the variety the
     batch exists to demonstrate.
     """
-    plan = plan or build_plan()
+    plan = plan or default_plan(ctx)
     return [run_once(ctx, style_id, item, plan=plan) for item in inputs]
 
 

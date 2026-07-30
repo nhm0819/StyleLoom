@@ -67,6 +67,10 @@ class Plan:
 #     being a generic attention grabber.
 #   * casting before storyboard, since every shot prompt carries the presenter and
 #     the location; and after ingest, so a future casting rule can read the brief.
+#   * keyframe after storyboard and before render: it needs the shots to know which
+#     compositions to draw, and render needs the frames to open on. It is also the
+#     last cheap stage -- a bad anchor is visible in a JPEG before any video is
+#     bought.
 #   * qc last and separable, because it re-probes the finished file.
 STANDARD_STEPS = (
     "ingest",
@@ -74,16 +78,26 @@ STANDARD_STEPS = (
     "outline",
     "hook",
     "storyboard",
+    "keyframe",
     "render",
     "assemble",
     "qc",
 )
 
+# Steps that a caller can drop. Both are genuinely optional rather than merely
+# skippable: `render` reads keyframes defensively and falls back to text-to-video,
+# and nothing reads `qc`.
+OPTIONAL_STEPS = ("keyframe", "qc")
 
-def build_plan(include_qc: bool = True) -> Plan:
-    steps = STANDARD_STEPS if include_qc else tuple(
-        s for s in STANDARD_STEPS if s != "qc"
-    )
-    plan = Plan(name="standard" if include_qc else "standard_no_qc", steps=steps)
+
+def build_plan(include_qc: bool = True, include_keyframe: bool = True) -> Plan:
+    dropped = {
+        name
+        for name, keep in (("qc", include_qc), ("keyframe", include_keyframe))
+        if not keep
+    }
+    steps = tuple(s for s in STANDARD_STEPS if s not in dropped)
+    suffix = "".join(f"_no_{s}" for s in STANDARD_STEPS if s in dropped)
+    plan = Plan(name=f"standard{suffix}", steps=steps)
     plan.validate()
     return plan

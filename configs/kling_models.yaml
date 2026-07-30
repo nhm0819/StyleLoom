@@ -11,7 +11,12 @@
 #     {"model_name": "kling-v3", "mode": "std", ...}
 #
 # `mode` (std | pro) is the quality tier and lives in Settings, not here.
-# Text to video only: there is no keyframe stage and no image endpoint.
+#
+# Three capabilities, three sections. `text_to_image` builds a first frame,
+# `image_to_video` animates it, and `text_to_video` is the fallback for a run with
+# no first frame. The keyframe stage is back after having been removed once -- see
+# docs/KEYFRAME_SCOPE.md for what changed, which is that ONE anchor is now reused
+# across every request instead of each cut rolling its own.
 #
 # Values marked `unverified` are floors and enums that could not be confirmed --
 # kling.ai/document-api renders client-side, so only fragments that reached a
@@ -88,6 +93,117 @@ text_to_video:
     multi_prompt_indexed: true
     output_key: videos
     capabilities: [multi_prompt]
+    defaults:
+      sound: "off"
+      negative_prompt: "text overlay, subtitles, captions, watermark, logo"
+
+text_to_image:
+  kling-v3:
+    # POST /v1/images/generations   verified from the official curl example.
+    path: /v1/images/generations
+    # Same enum shape as video: a ratio, never a pixel size. Wider than the video
+    # list because the image endpoint offers eight named ratios plus Auto.
+    aspect_ratio_choices: ["9:16", "16:9", "1:1", "3:4", "4:3", "2:3", "3:2", "21:9"]
+    max_prompt_chars: 2500
+    # One reference image, sent as raw Base64 in a flat field, and addressed from
+    # the prompt by token. This is the parameter that makes every window's first
+    # frame a descendant of one anchor rather than an independent roll.
+    reference_param: image
+    reference_token: "<<<image_1>>>"
+    output_key: images                # data.task_result.images[].url
+    defaults:
+      # Strings, not ints: the official example sends "n": "9" and "resolution":
+      # "2k" quoted. A bare int is the kind of thing that is accepted and ignored.
+      n: "1"
+      # 1k is enough for a 720x1280 start frame. 2k/4k are available and cost more
+      # for pixels the video endpoint discards when it reads the frame.
+      resolution: "1k"
+
+image_to_video:
+  kling-v3:
+    # POST /v1/videos/image2video/   verified. A different path from text2video,
+    # not the same path with an extra field.
+    path: /v1/videos/image2video/
+    # Flat field, raw Base64 with NO data:image/png;base64, prefix -- the prefix
+    # is a 400, and it is the single easiest mistake to make here.
+    first_frame_param: image
+    first_frame_format: base64_string
+    # Deliberately absent, unlike the text_to_video entries: with a start frame the
+    # endpoint reads the ratio off the image. Sending one is at best redundant and
+    # at worst a conflict with the frame that was just uploaded.
+    sends_aspect_ratio: false
+    duration_param: duration
+    duration_format: bare_string
+    min_duration: 3
+    max_duration: 15
+    max_shot_window_sec: 15
+    max_shots_per_request: 6
+    max_prompt_chars: 2500
+    max_shot_prompt_chars: 512
+    multi_shot_param: multi_shot
+    shot_type: customize
+    multi_prompt_param: multi_prompt
+    multi_prompt_duration_type: integer_string
+    multi_prompt_indexed: true
+    multi_shot_syntax: multi_prompt
+    output_key: videos
+    capabilities: [multi_prompt, first_frame]
+    defaults:
+      sound: "off"
+      negative_prompt: "text overlay, subtitles, captions, watermark, logo"
+
+  kling-v3-omni:
+    # POST /v1/videos/omni-video/   the same path the text_to_video entry uses.
+    # Omni is one unified endpoint; what changes is which inputs are populated.
+    path: /v1/videos/omni-video/
+    # NOT a flat field. Omni takes a typed list, and the type is what distinguishes
+    # a start frame from a style reference:
+    #
+    #   image_list: [{"type": "first_frame", "url": "<base64|url>", "id": "image_1"}]
+    #
+    # `type` is an enum of first_frame | last_frame | refer_image, and `id` is what
+    # the prompt addresses as <<<image_1>>>. Putting a first frame in without the
+    # type would make it a style reference -- accepted, billed, and not a start
+    # frame, with nothing in the response saying so.
+    first_frame_param: image_list
+    first_frame_format: typed_list
+    first_frame_type: first_frame
+    first_frame_id: image_1
+    first_frame_token: "<<<image_1>>>"
+    sends_aspect_ratio: false
+    duration_param: duration
+    duration_format: bare_string
+    min_duration: 3
+    max_duration: 15
+    max_shot_window_sec: 15
+    max_shots_per_request: 6
+    max_prompt_chars: 2500
+    max_shot_prompt_chars: 512
+    multi_shot_param: multi_shot
+    shot_type: customize
+    multi_prompt_param: multi_prompt
+    multi_prompt_duration_type: integer_string
+    multi_prompt_indexed: true
+    # multi_prompt, not semicolon_prompt. Both appear in Kling's docs and they are
+    # not equivalent:
+    #
+    #   multi_prompt      a JSON array of {index, prompt, duration}. This is what
+    #                     the official curl examples for image2video and omni-video
+    #                     both send, and it is what `shot_type: customize` reads.
+    #   semicolon_prompt  "shot 1, 3, words; shot 2, 4, words;" written into the
+    #                     single top-level `prompt` field. The Omni prompt guide
+    #                     documents this form for hand-written prompts.
+    #
+    # The array is the verified transport, so it is the default. The semicolon form
+    # is implemented (`format_semicolon_shots`) and selectable, but it is UNVERIFIED
+    # in one specific way that matters: the schema says `prompt` is invalid once
+    # `multi_shot` is true, and no official example shows the semicolon string
+    # alongside those flags. Which combination the endpoint honours could not be
+    # confirmed without spending credits, and a prompt that is parsed as prose
+    # instead of a shot list produces one long shot and reports success.
+    multi_shot_syntax: multi_prompt
+    output_key: videos
+    capabilities: [multi_prompt, first_frame, semicolon_prompt]
     defaults:
       sound: "off"
       negative_prompt: "text overlay, subtitles, captions, watermark, logo"
