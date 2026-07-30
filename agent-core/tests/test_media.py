@@ -164,3 +164,90 @@ def test_the_font_size_is_derived_from_width_not_height():
     assert "w*" in narrow and "/24" in narrow
     # More characters per line must mean a smaller font, not the same one.
     assert narrow != wide
+
+
+def _line_gaps(frame_png: Path) -> tuple[int, list[int]]:
+    """Single-line height and the blank gaps between wrapped lines, in pixels."""
+    image = cv2.imread(str(frame_png), cv2.IMREAD_GRAYSCALE)
+    bright = image.max(axis=1) > 40
+    rows = np.where(bright)[0]
+    gaps: list[int] = []
+    run = 0
+    for y in range(int(rows.min()), int(rows.max()) + 1):
+        if not bright[y]:
+            run += 1
+        elif run:
+            gaps.append(run)
+            run = 0
+    band = int(rows.max() - rows.min() + 1)
+    line_h = (band - sum(gaps)) // (len(gaps) + 1)
+    return line_h, gaps
+
+
+THREE_LINE_KO = "세라믹 텀블러인데 보온이 여섯 시간이나 계속 가더라"
+
+
+@pytest.mark.parametrize("pos", ["top", "center", "center_lower", "bottom"])
+@pytest.mark.parametrize("text", ["보온 6시간", "세라믹 텀블러 보온이 6시간", THREE_LINE_KO])
+def test_no_caption_position_runs_off_the_frame(tmp_path, pos, text):
+    """drawtext's `y` is the TOP of the block, so a low anchor has to subtract
+    `text_h`. `bottom` was a bare `h*0.82`: fine on one line, and a three-line
+    caption ran past the bottom edge -- silently, because ffmpeg draws outside the
+    frame without complaint."""
+    if resolve_font() is None:
+        pytest.skip("no CJK-capable font installed")
+
+    clip = _solid_clip(tmp_path / "base.mp4", 720, 1280)
+    out = burn_captions(
+        clip,
+        [CaptionCue(text=text, start=0.0, end=2.0)],
+        CaptionStyle(max_chars_per_line=12, pos=pos),
+        tmp_path / "out.mp4",
+    )
+    _, _, top, bottom = _drawn_extent(out, tmp_path / "frame.png")
+    assert top > 0, f"{pos}: clipped at the top ({top})"
+    assert bottom < 1280 - 1, f"{pos}: clipped at the bottom ({bottom} of 1280)"
+
+
+@pytest.mark.parametrize("text", ["보온 6시간", "세라믹 텀블러 보온이 6시간", THREE_LINE_KO])
+def test_the_default_position_sits_below_centre(tmp_path, text):
+    """`center_lower` has to be below the middle at every line count, not just at
+    one. Because it is anchored by its own centre, a wrapping caption grows upward
+    and keeps its bottom in roughly the same place instead of marching down."""
+    if resolve_font() is None:
+        pytest.skip("no CJK-capable font installed")
+
+    clip = _solid_clip(tmp_path / "base.mp4", 720, 1280)
+    out = burn_captions(
+        clip,
+        [CaptionCue(text=text, start=0.0, end=2.0)],
+        CaptionStyle(max_chars_per_line=12, pos="center_lower"),
+        tmp_path / "out.mp4",
+    )
+    _, _, top, bottom = _drawn_extent(out, tmp_path / "frame.png")
+    middle = (top + bottom) / 2
+    assert middle > 1280 * 0.60, f"caption centred at {middle / 1280:.0%}, not below centre"
+    # And still clear of the very bottom, where platform UI sits.
+    assert bottom < 1280 * 0.90
+
+
+def test_wrapped_lines_are_tightly_spaced(tmp_path):
+    """Noto CJK's own leading is loose for a caption: at the default it left a gap
+    wider than half a line, which reads as separate captions rather than one block."""
+    if resolve_font() is None:
+        pytest.skip("no CJK-capable font installed")
+
+    clip = _solid_clip(tmp_path / "base.mp4", 720, 1280)
+    out = burn_captions(
+        clip,
+        [CaptionCue(text=THREE_LINE_KO, start=0.0, end=2.0)],
+        CaptionStyle(max_chars_per_line=12),
+        tmp_path / "out.mp4",
+    )
+    # Extracts the frame this then measures.
+    _drawn_extent(out, tmp_path / "frame.png")
+    line_h, gaps = _line_gaps(tmp_path / "frame.png")
+    assert len(gaps) >= 2, f"expected a three-line caption, found gaps {gaps}"
+    assert max(gaps) < line_h * 0.5, f"lines {max(gaps)}px apart on a {line_h}px line"
+    # Not so tight that the strokes merge into each other.
+    assert min(gaps) > 2, f"lines nearly touching: {gaps}"

@@ -89,11 +89,31 @@ def caption_fontsize_expr(max_chars_per_line: int) -> str:
     return f"min({budget},{ceiling})"
 
 
+# Extra pixels between wrapped lines, on top of the font's own leading. Negative
+# because Noto CJK's natural leading is loose for a caption: at the ~54px font a
+# 720-wide frame gets, the default left 36px of blank between the stroked lines,
+# which reads as three separate captions rather than one block. -12 measures at a
+# 14px gap -- tight, with the strokes still clearly apart.
+#
+# A constant rather than a fraction of the font size because `line_spacing` is an
+# int option in drawtext and, unlike `fontsize`, is not expression-evaluated -- an
+# expression here is rejected outright. It is therefore tuned for the 720x1280 this
+# renders by default and merely tightens less, never overlaps, on larger frames.
+CAPTION_LINE_SPACING = -12
+
+# Vertical placement, as drawtext `y` expressions. `y` is the TOP of the text block,
+# so anything anchored low has to subtract `text_h` or it runs off the bottom as
+# soon as a caption wraps: `bottom` used to be a bare `h*0.82`, which is fine for
+# one line and pushes a three-line caption past the frame edge. Every entry here is
+# expressed in terms of where the block should *sit*, with `text_h` doing the work.
 Y_BY_POS = {
-    "top": "h*0.12",
+    "top": "h*0.10",
     "center": "(h-text_h)/2",
-    "center_lower": "h*0.62",
-    "bottom": "h*0.82",
+    # Centred at 74% of the height: clearly below the middle, which is where a
+    # short-form caption belongs -- the subject's face is usually mid-frame, and the
+    # bottom eighth is where platform UI sits.
+    "center_lower": "h*0.74-text_h/2",
+    "bottom": "h*0.88-text_h",
 }
 
 _ENCODE = ["-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
@@ -225,7 +245,7 @@ def burn_captions(
             # of this filter and the start of another.
             f":fontsize='{caption_fontsize_expr(style.max_chars_per_line)}'"
             f":borderw={CAPTION_BORDER_PX}:bordercolor={style.stroke_color}"
-            f":line_spacing=10"
+            f":line_spacing={CAPTION_LINE_SPACING}"
             f":x=(w-text_w)/2"
             f":y={Y_BY_POS.get(style.pos, 'h*0.62')}"
             f":alpha='{alpha}'"
